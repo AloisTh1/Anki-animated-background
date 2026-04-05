@@ -140,6 +140,40 @@ class SettingsDialogTests(unittest.TestCase):
         self.assertIn(str(Path("nature") / "loop.png"), selector_values)
         self.assertEqual(dialog.media_selector.currentData(), str(Path("nature") / "loop.png"))
 
+    def test_media_selector_always_offers_none_option(self) -> None:
+        self._stage_managed_media()
+        source_dir = self.root / "external"
+        nested_file = source_dir / "anime" / "scene1" / "clip.png"
+        self._write_png(nested_file)
+
+        dialog = SettingsDialog(self.config)
+        self.addCleanup(dialog.close)
+
+        dialog.folder_input.setText(str(source_dir))
+        dialog._refresh_media_selector(str(Path("anime") / "scene1" / "clip.png"))
+
+        self.assertEqual(dialog.media_selector.itemText(0), "None")
+        self.assertEqual(dialog.media_selector.itemData(0), "")
+
+    def test_build_live_config_allows_none_selection_for_folder_source(self) -> None:
+        source_dir = self.root / "external"
+        self._write_png(source_dir / "sample.png")
+
+        dialog = SettingsDialog(self.config)
+        self.addCleanup(dialog.close)
+
+        dialog.folder_input.setText(str(source_dir))
+        dialog._refresh_media_selector()
+        dialog.media_selector.setCurrentIndex(0)
+
+        staged = dialog._build_live_config(show_errors=True)
+
+        self.assertIsNotNone(staged)
+        updated, resolved_media_path = staged
+        self.assertEqual(updated["media"]["source_folder"], str(Path("external")))
+        self.assertEqual(updated["media"]["selected_file"], "")
+        self.assertIsNone(resolved_media_path)
+
     def test_accept_commits_nested_external_media_and_reopens_with_same_nested_selection(self) -> None:
         self._stage_managed_media()
         source_dir = self.root / "external"

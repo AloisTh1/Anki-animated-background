@@ -7,7 +7,6 @@ from .src.common.utils import ensure_main_window
 from .src.config.config_manager import ConfigManager
 from .src.injector.background_controller import BackgroundController
 from .src.injector.webview_injector import WebviewInjector
-from .src.view.branding import create_brand_icon
 from .src.view.settings_dialog import SettingsDialog
 
 
@@ -37,7 +36,6 @@ class AnimatedBackgroundAddon:
 
         main_window = ensure_main_window()
         self.action = QAction(ADDON_CONSTANTS.MENU_LABEL.value, main_window)
-        self.action.setIcon(create_brand_icon())
         qconnect(self.action.triggered, self._open_settings)
 
         if mw:

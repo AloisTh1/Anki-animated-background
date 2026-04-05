@@ -529,14 +529,13 @@ class SettingsDialog(QDialog):
 
         self.media_selector.blockSignals(True)
         self.media_selector.clear()
-        empty_label = "No media found in folder" if source_folder else "No media selected"
-        self.media_selector.addItem(empty_label, "")
+        self.media_selector.addItem("None", "")
         for filename in files:
             self.media_selector.addItem(filename, filename)
 
         index = self.media_selector.findData(target)
         if index < 0:
-            index = 1 if files else 0
+            index = 0
         self.media_selector.setCurrentIndex(index)
         self.media_selector.blockSignals(False)
 
@@ -973,14 +972,9 @@ class SettingsDialog(QDialog):
 
         if source_folder:
             available_files = self._get_source_folder_files(source_folder)
-            if not available_files:
-                if show_errors:
-                    showWarning("The selected folder does not contain any supported media files.")
-                return None
-            if not selected_file:
-                selected_file = available_files[0]
-            resolved_media_path = self.config.resolve_source_folder_media_path(source_folder, selected_file)
-            if resolved_media_path is None:
+            if selected_file:
+                resolved_media_path = self.config.resolve_source_folder_media_path(source_folder, selected_file)
+            if selected_file and resolved_media_path is None:
                 if show_errors:
                     showWarning("The selected media file was not found in the source folder.")
                 return None

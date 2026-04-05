@@ -6,7 +6,7 @@ import types
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtCore import QSize, Qt
+from PyQt6.QtCore import QRect, QSize, Qt
 from PyQt6.QtGui import QColor, QFont, QIcon, QMovie, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
@@ -65,6 +65,7 @@ def install_fake_aqt() -> None:
     qt_module.QPen = QPen
     qt_module.QPixmap = QPixmap
     qt_module.QPushButton = QPushButton
+    qt_module.QRect = QRect
     qt_module.QSize = QSize
     qt_module.QSizePolicy = QSizePolicy
     qt_module.QSlider = QSlider
