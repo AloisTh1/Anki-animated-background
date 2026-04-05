@@ -2,6 +2,17 @@
 
 <!-- version list -->
 
+## v1.0.2 (2026-04-05)
+
+### Bug Fixes
+
+- **doc**: Replace mermaid
+  ([`18d486d`](https://github.com/AloisTh1/Anki-animated-background/commit/18d486dfa5bf8876d3c4eb7b8eb73c92fb3a181e))
+
+- **preview**: Negative values
+  ([`77b74f1`](https://github.com/AloisTh1/Anki-animated-background/commit/77b74f1439c8bdfda203cbeba51ebb01784a6aef))
+
+
 ## v1.0.1 (2026-04-05)
 
 ### Bug Fixes
