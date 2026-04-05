@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from copy import deepcopy
-import os
 from pathlib import Path
 
 from aqt import qconnect
@@ -896,7 +896,6 @@ class SettingsDialog(QDialog):
         resolved_media_path: Path | None = None
 
         if source_folder:
-            available_files = self._get_source_folder_files(source_folder)
             if selected_file:
                 resolved_media_path = self.config.resolve_source_folder_media_path(
                     source_folder, selected_file
