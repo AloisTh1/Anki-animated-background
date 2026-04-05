@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.3.0 (2026-04-05)
+
+### Features
+
+- **videos**: Add mc gameplay
+  ([`4ad8f48`](https://github.com/AloisTh1/Anki-animated-background/commit/4ad8f48b0734b1b63aff0d445019a27dfd71efcd))
+
+
 ## v1.2.0 (2026-04-05)
 
 
