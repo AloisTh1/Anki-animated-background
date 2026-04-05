@@ -7,9 +7,19 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from PyQt6.QtGui import QImage
+from src.config.config_manager import ConfigManager, SUPPORTED_MEDIA_EXTENSIONS
 
-from src.config.config_manager import ConfigManager
+MINIMAL_GIF = (
+    b"GIF89a"
+    b"\x01\x00\x01\x00"
+    b"\x80\x00\x00"
+    b"\x00\x00\x00"
+    b"\xff\xff\xff"
+    b"!\xf9\x04\x01\x00\x00\x00\x00"
+    b",\x00\x00\x00\x00\x01\x00\x01\x00\x00"
+    b"\x02\x02D\x01\x00"
+    b";"
+)
 
 
 class ConfigManagerTests(unittest.TestCase):
@@ -18,16 +28,11 @@ class ConfigManagerTests(unittest.TestCase):
         self.addCleanup(self.temp_dir.cleanup)
         self.root = Path(self.temp_dir.name)
 
-    def _write_png(self, path: Path, size_bytes: int | None = None) -> None:
+    def _write_media(self, path: Path, *, payload: bytes = MINIMAL_GIF) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        if size_bytes is None:
-            image = QImage(1, 1, QImage.Format.Format_ARGB32)
-            image.fill(0xFFFFFFFF)
-            image.save(str(path))
-            return
-        path.write_bytes(b"\x00" * size_bytes)
+        path.write_bytes(payload)
 
-    def test_reload_normalizes_invalid_config_and_drops_legacy_source_url_on_save(self) -> None:
+    def test_reload_normalizes_invalid_config_and_drops_legacy_fields_on_save(self) -> None:
         user_files = self.root / "user_files"
         user_files.mkdir(parents=True, exist_ok=True)
         (user_files / "config.json").write_text(
@@ -51,6 +56,7 @@ class ConfigManagerTests(unittest.TestCase):
                         "blur": "-5",
                         "zoom": "0.5",
                         "muted": "false",
+                        "bounce": True,
                         "playback_rate": "9.0",
                     },
                 }
@@ -67,22 +73,40 @@ class ConfigManagerTests(unittest.TestCase):
         self.assertFalse(manager.data["targets"]["deck_browser"])
         self.assertTrue(manager.data["targets"]["main_window"])
         self.assertEqual(manager.data["media"]["source_folder"], "")
+        self.assertEqual(manager.data["media"]["selected_file"], "")
         self.assertEqual(manager.data["media"]["trim_start"], 0.0)
         self.assertEqual(manager.data["media"]["trim_end"], 1.25)
         self.assertEqual(manager.data["media"]["opacity"], 1.0)
         self.assertEqual(manager.data["media"]["blur"], 0)
         self.assertEqual(manager.data["media"]["zoom"], 1.0)
         self.assertFalse(manager.data["media"]["muted"])
-        self.assertFalse(manager.data["media"]["bounce"])
         self.assertEqual(manager.data["media"]["playback_rate"], 3.0)
+        self.assertNotIn("bounce", manager.data["media"])
 
         manager.save()
         persisted = json.loads((user_files / "config.json").read_text(encoding="utf-8"))
         self.assertNotIn("source_url", persisted["media"])
+        self.assertNotIn("bounce", persisted["media"])
+
+    def test_commit_media_accepts_only_supported_formats(self) -> None:
+        source = self.root / "clip.gif"
+        self._write_media(source)
+        manager = ConfigManager(addon_root=self.root / "supported-root")
+
+        committed_name = manager.commit_media_from_path(source)
+
+        self.assertEqual(Path(committed_name).suffix.lower(), ".gif")
+        self.assertTrue(manager.media_path(committed_name).is_file())
+        self.assertEqual(SUPPORTED_MEDIA_EXTENSIONS, {".gif", ".webm", ".mp4"})
+
+        png_source = self.root / "still.png"
+        self._write_media(png_source)
+        with self.assertRaisesRegex(ValueError, "gif, webm, mp4"):
+            manager.commit_media_from_path(png_source)
 
     def test_commit_media_prefers_link_then_copy_fallback(self) -> None:
-        source = self.root / "source.png"
-        self._write_png(source)
+        source = self.root / "source.gif"
+        self._write_media(source)
 
         linked_manager = ConfigManager(addon_root=self.root / "link-root")
         with mock.patch("src.config.config_manager.os.link") as mocked_link:
@@ -94,18 +118,15 @@ class ConfigManagerTests(unittest.TestCase):
         copied_manager = ConfigManager(addon_root=self.root / "copy-root")
         with (
             mock.patch("src.config.config_manager.os.link", side_effect=OSError("cross-device")),
-            mock.patch(
-                "src.config.config_manager.shutil.copy2",
-                wraps=shutil.copy2,
-            ) as mocked_copy,
+            mock.patch("src.config.config_manager.shutil.copy2", wraps=shutil.copy2) as mocked_copy,
         ):
             copied_name = copied_manager.commit_media_from_path(source)
         self.assertTrue(mocked_copy.called)
         self.assertTrue(copied_manager.media_path(copied_name).is_file())
 
     def test_commit_media_reuses_existing_match(self) -> None:
-        source = self.root / "reuse.png"
-        self._write_png(source)
+        source = self.root / "reuse.gif"
+        self._write_media(source)
 
         manager = ConfigManager(addon_root=self.root / "reuse-root")
         first_name = manager.commit_media_from_path(source)
@@ -116,57 +137,57 @@ class ConfigManagerTests(unittest.TestCase):
 
     def test_list_source_folder_files_recurses_and_returns_relative_paths(self) -> None:
         source_dir = self.root / "wallpapers"
-        self._write_png(source_dir / "root.png")
-        self._write_png(source_dir / "anime" / "loop.png")
-        self._write_png(source_dir / "nature" / "forest" / "loop.png")
+        self._write_media(source_dir / "root.gif")
+        self._write_media(source_dir / "anime" / "loop.webm", payload=b"webm")
+        self._write_media(source_dir / "nature" / "forest" / "loop.mp4", payload=b"mp4")
+        self._write_media(source_dir / "ignored.png")
 
         manager = ConfigManager(addon_root=self.root / "scan-root")
 
         self.assertEqual(
             manager.list_source_folder_files(str(source_dir)),
             [
-                str(Path("anime") / "loop.png"),
-                str(Path("nature") / "forest" / "loop.png"),
-                "root.png",
+                str(Path("anime") / "loop.webm"),
+                str(Path("nature") / "forest" / "loop.mp4"),
+                "root.gif",
             ],
         )
 
     def test_resolve_source_folder_media_path_rejects_escape_paths(self) -> None:
         source_dir = self.root / "wallpapers"
-        self._write_png(source_dir / "safe.png")
-        outside_file = self.root / "outside.png"
-        self._write_png(outside_file)
+        self._write_media(source_dir / "safe.gif")
+        outside_file = self.root / "outside.gif"
+        self._write_media(outside_file)
 
         manager = ConfigManager(addon_root=self.root / "resolve-root")
 
         self.assertEqual(
-            manager.resolve_source_folder_media_path(str(source_dir), "safe.png"),
-            (source_dir / "safe.png").resolve(),
+            manager.resolve_source_folder_media_path(str(source_dir), "safe.gif"),
+            (source_dir / "safe.gif").resolve(),
         )
         self.assertIsNone(
-            manager.resolve_source_folder_media_path(str(source_dir), str(Path("..") / "outside.png"))
+            manager.resolve_source_folder_media_path(str(source_dir), str(Path("..") / "outside.gif"))
         )
 
-    def test_first_reload_defaults_to_packaged_wallpaper_folder(self) -> None:
+    def test_first_reload_defaults_to_packaged_folder_with_none_selection(self) -> None:
         default_source = self.root / "user_files" / "media" / "Wallpapers_anki" / "Smoke"
-        self._write_png(default_source / "default.png")
+        self._write_media(default_source / "default.gif")
 
         manager = ConfigManager(addon_root=self.root)
 
         self.assertEqual(
             manager.data["media"]["source_folder"], str(Path("user_files") / "media" / "Wallpapers_anki")
         )
-        self.assertEqual(manager.data["media"]["selected_file"], str(Path("Smoke") / "default.png"))
+        self.assertEqual(manager.data["media"]["selected_file"], "")
 
     def test_reset_to_defaults_restores_packaged_folder_and_clears_imported_media(self) -> None:
         packaged_source = self.root / "user_files" / "media" / "Wallpapers_anki" / "Smoke"
-        self._write_png(packaged_source / "default.png")
-        imported_source = self.root / "custom.png"
-        self._write_png(imported_source)
+        self._write_media(packaged_source / "default.gif")
+        imported_source = self.root / "custom.gif"
+        self._write_media(imported_source)
 
         manager = ConfigManager(addon_root=self.root)
         managed_name = manager.commit_media_from_path(imported_source)
-        manager.data["tutorial_seen"] = True
         manager.data["media"]["source_folder"] = ""
         manager.data["media"]["selected_file"] = managed_name
         manager.save()
@@ -174,18 +195,17 @@ class ConfigManagerTests(unittest.TestCase):
         failed_removals = manager.reset_to_defaults()
 
         self.assertEqual(failed_removals, [])
-        self.assertTrue(manager.data["tutorial_seen"])
         self.assertEqual(
             manager.data["media"]["source_folder"], str(Path("user_files") / "media" / "Wallpapers_anki")
         )
-        self.assertEqual(manager.data["media"]["selected_file"], str(Path("Smoke") / "default.png"))
+        self.assertEqual(manager.data["media"]["selected_file"], "")
         self.assertFalse(manager.media_path(managed_name).exists())
 
     def test_reset_to_defaults_reports_locked_managed_files_without_crashing(self) -> None:
         packaged_source = self.root / "user_files" / "media" / "Wallpapers_anki" / "Smoke"
-        self._write_png(packaged_source / "default.png")
-        imported_source = self.root / "custom.png"
-        self._write_png(imported_source)
+        self._write_media(packaged_source / "default.gif")
+        imported_source = self.root / "custom.gif"
+        self._write_media(imported_source)
 
         manager = ConfigManager(addon_root=self.root)
         managed_name = manager.commit_media_from_path(imported_source)
@@ -194,8 +214,7 @@ class ConfigManagerTests(unittest.TestCase):
             failed_removals = manager.reset_to_defaults()
 
         self.assertEqual(failed_removals, [managed_name])
-        self.assertTrue(manager.data["tutorial_seen"])
-        self.assertEqual(manager.data["media"]["selected_file"], str(Path("Smoke") / "default.png"))
+        self.assertEqual(manager.data["media"]["selected_file"], "")
 
     def test_serialize_and_resolve_packaged_source_folder_as_addon_relative_path(self) -> None:
         packaged_root = self.root / "user_files" / "media" / "Wallpapers_anki"
@@ -206,6 +225,17 @@ class ConfigManagerTests(unittest.TestCase):
 
         self.assertEqual(serialized, str(Path("user_files") / "media" / "Wallpapers_anki"))
         self.assertEqual(manager.resolve_source_folder(serialized), packaged_root.resolve())
+
+    def test_normalize_media_selection_clears_invalid_folder_selection_instead_of_autopicking(self) -> None:
+        source_dir = self.root / "wallpapers"
+        self._write_media(source_dir / "loop.gif")
+        manager = ConfigManager(addon_root=self.root / "folder-root")
+
+        manager.data["media"]["source_folder"] = str(source_dir)
+        manager.data["media"]["selected_file"] = "missing.gif"
+        manager._normalize_media_selection()
+
+        self.assertEqual(manager.data["media"]["selected_file"], "")
 
 
 if __name__ == "__main__":

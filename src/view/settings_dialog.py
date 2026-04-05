@@ -181,7 +181,7 @@ class SettingsDialog(QDialog):
         self._refresh_preview_with_guard(allow_prompt=False)
 
     def closeEvent(self, event) -> None:
-        self.preview_player.stop()
+        self._clear_preview("Select media to preview")
         super().closeEvent(event)
 
     def accept(self) -> None:
