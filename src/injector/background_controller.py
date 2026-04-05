@@ -25,10 +25,10 @@ from PyQt6.QtGui import QColor
 from PyQt6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PyQt6.QtMultimediaWidgets import QGraphicsVideoItem
 
-REVERSE_STEP_INTERVAL_MS = 33
-
 from ..config.config_manager import ConfigManager
 from .webview_injector import VIDEO_EXTENSIONS, WebviewInjector
+
+REVERSE_STEP_INTERVAL_MS = 33
 
 STATE_TO_TARGET = {
     "review": "reviewer",

@@ -2,9 +2,10 @@ import os
 import shutil
 import zipfile
 
+from build_support import ASSETS_PACKAGING_DIR, get_version, materialize_release_tree
+
 BUILD_DIR = "build_pkg"
 DIST_DIR = "dist"
-from build_support import ASSETS_PACKAGING_DIR, get_version, materialize_release_tree
 
 
 VERSION = get_version()

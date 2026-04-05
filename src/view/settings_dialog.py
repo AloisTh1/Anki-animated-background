@@ -973,7 +973,9 @@ class SettingsDialog(QDialog):
         if source_folder:
             available_files = self._get_source_folder_files(source_folder)
             if selected_file:
-                resolved_media_path = self.config.resolve_source_folder_media_path(source_folder, selected_file)
+                resolved_media_path = self.config.resolve_source_folder_media_path(
+                    source_folder, selected_file
+                )
             if selected_file and resolved_media_path is None:
                 if show_errors:
                     showWarning("The selected media file was not found in the source folder.")
