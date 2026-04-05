@@ -2,6 +2,22 @@
 
 <!-- version list -->
 
+## v1.1.0 (2026-04-05)
+
+### Bug Fixes
+
+- **settings**: Remove stale var
+  ([`f0992f6`](https://github.com/AloisTh1/Anki-animated-background/commit/f0992f6a1e339b706e74f9fffdef0f056b6a1591))
+
+- **tests**: Remove stale tests
+  ([`120f813`](https://github.com/AloisTh1/Anki-animated-background/commit/120f8138a50be0398b058a0c79bc1ad58ae8f800))
+
+### Features
+
+- **preview**: Remove bounce, fix video selection default issue
+  ([`84a0bbe`](https://github.com/AloisTh1/Anki-animated-background/commit/84a0bbe01364086968f1f3810e33cb03cda0b568))
+
+
 ## v1.0.2 (2026-04-05)
 
 ### Bug Fixes
