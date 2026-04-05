@@ -1,0 +1,26 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+build_pkg/
+
+# Virtual environments
+.venv
+.timetracker
+qtsources
+.mypy_cache
+.ruff_cache
+src/common/version.py
+
+# Editor and local tooling
+.vscode/
+temp_repo_sync/
+
+# Local test artifacts and scratch files
+compression_run.log
+0405.mp4
+5f0df141-a35b-4b41-a802-555db8b5068d.png
+
