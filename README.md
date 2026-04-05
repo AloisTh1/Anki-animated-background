@@ -87,21 +87,69 @@ The add-on is intentionally split into a few small modules with clear roles:
 
 ```mermaid
 flowchart TD
-    A[Anki Startup] --> B[Addon Entry Point]
-    B --> C[ConfigManager]
-    B --> D[WebviewInjector]
-    B --> E[BackgroundController]
-    B --> F[SettingsDialog]
+    subgraph ANKI["Anki Native Runtime"]
+        A[Anki startup]
+        B[Main window / mw]
+        C[Reviewer, Deck Browser, Overview]
+        D[Qt WebView]
+        E[Qt Multimedia backend]
+    end
 
-    C --> G[user_files/config.json]
-    C --> H[user_files/media]
+    subgraph ADDON["Animated Background Add-on"]
+        F[__init__.py<br/>entry point + hook registration]
+        G[ConfigManager<br/>normalize + resolve + persist]
+        H[SettingsDialog<br/>user controls + preview]
+        I[WebviewInjector<br/>HTML/CSS image injection]
+        J[BackgroundController<br/>screen-state coordinator]
+        K[NativeVideoBackground<br/>QMediaPlayer + overlay]
+    end
 
-    F --> C
-    F --> E
-    D --> I[Reviewer / Deck Browser / Overview]
-    E --> I
-    I --> J[Injected image background]
-    E --> K[Native Qt video overlay]
+    subgraph DATA["Add-on Data"]
+        L[user_files/config.json]
+        M[user_files/media/]
+        N[Packaged sample media]
+    end
+
+    A -->|"loads add-on"| F
+    A -->|"creates Anki UI"| B
+    B -->|"hosts screens"| C
+    C -->|"renders into"| D
+    F -->|"registers hooks on"| B
+    F -->|"creates shared services"| G
+    F -->|"creates"| I
+    F -->|"creates"| J
+    F -->|"opens from Tools menu"| H
+
+    G -->|"reads / writes"| L
+    G -->|"resolves managed files from"| M
+    G -->|"resolves packaged defaults from"| N
+
+    H -->|"loads current settings from"| G
+    H -->|"live preview / staged updates to"| J
+    H -->|"save persists through"| G
+
+    I -->|"injects CSS / IMG background into"| D
+    J -->|"checks active screen + media config in"| G
+    J -->|"for image media, delegates render to"| I
+    J -->|"for video media, controls"| K
+    K -->|"plays video using"| E
+    K -->|"draws native overlay above"| D
+
+    C -->|"screen change hooks trigger refresh in"| J
+    D -->|"shows image background path"| I
+    E -->|"drives playback status / errors for"| K
+
+    classDef anki fill:#eef2f7,stroke:#5f6b7a,color:#1a2230
+    classDef addon fill:#f6f1ff,stroke:#7b61ff,color:#241b4b
+    classDef data fill:#eefaf4,stroke:#34a853,color:#163322
+    classDef imagePath fill:#fff5e8,stroke:#ff9800,color:#4a2a00
+    classDef videoPath fill:#e9f4ff,stroke:#1e88e5,color:#0d2a4d
+
+    class A,B,C,D,E anki
+    class F,G,H,J addon
+    class L,M,N data
+    class I imagePath
+    class K videoPath
 ```
 
 ### Design Patterns
