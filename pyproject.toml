@@ -1,6 +1,6 @@
 [project]
 name = "ankianimatedbackground"
-version = "1.0.2"
+version = "1.1.0"
 description = "Anki add-on that injects animated backgrounds into Anki webviews."
 readme = "README.md"
 requires-python = "==3.9.*"
