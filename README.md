@@ -83,74 +83,83 @@ The add-on is intentionally split into a few small modules with clear roles:
 - `src/view/settings_dialog.py`
   Hosts the user workflow for selection, preview, tuning, reset, and save.
 
-### Mermaid Flow
+### Runtime Map
 
-```mermaid
-flowchart TD
-    subgraph ANKI["Anki Native Runtime"]
-        A[Anki startup]
-        B[Main window / mw]
-        C[Reviewer, Deck Browser, Overview]
-        D[Qt WebView]
-        E[Qt Multimedia backend]
-    end
+**Anki native runtime**
 
-    subgraph ADDON["Animated Background Add-on"]
-        F[__init__.py<br/>entry point + hook registration]
-        G[ConfigManager<br/>normalize + resolve + persist]
-        H[SettingsDialog<br/>user controls + preview]
-        I[WebviewInjector<br/>HTML/CSS image injection]
-        J[BackgroundController<br/>screen-state coordinator]
-        K[NativeVideoBackground<br/>QMediaPlayer + overlay]
-    end
+- `Anki startup`
+  Loads the add-on entry point.
+- `Main window / mw`
+  Hosts the Tools menu and the current active screen.
+- `Reviewer / Deck Browser / Overview`
+  These are the supported screens that trigger background refreshes.
+- `Qt WebView`
+  The HTML surface used for image injection and normal Anki content.
+- `Qt Multimedia backend`
+  The native playback backend used for video backgrounds.
 
-    subgraph DATA["Add-on Data"]
-        L[user_files/config.json]
-        M[user_files/media/]
-        N[Packaged sample media]
-    end
+**Add-on components**
 
-    A -->|"loads add-on"| F
-    A -->|"creates Anki UI"| B
-    B -->|"hosts screens"| C
-    C -->|"renders into"| D
-    F -->|"registers hooks on"| B
-    F -->|"creates shared services"| G
-    F -->|"creates"| I
-    F -->|"creates"| J
-    F -->|"opens from Tools menu"| H
+- `__init__.py`
+  Registers Anki hooks, creates shared services, and adds the Tools menu action.
+- `ConfigManager`
+  Reads and writes `user_files/config.json`, resolves selected media, and normalizes settings.
+- `SettingsDialog`
+  Lets the user preview media, tune options, and persist changes.
+- `WebviewInjector`
+  Injects CSS and image backgrounds directly into Anki's webview.
+- `BackgroundController`
+  Decides whether a background should be active on the current screen and chooses the render path.
+- `NativeVideoBackground`
+  Uses `QMediaPlayer` and a native overlay for video playback.
 
-    G -->|"reads / writes"| L
-    G -->|"resolves managed files from"| M
-    G -->|"resolves packaged defaults from"| N
+**Add-on data**
 
-    H -->|"loads current settings from"| G
-    H -->|"live preview / staged updates to"| J
-    H -->|"save persists through"| G
+- `user_files/config.json`
+  Persistent settings.
+- `user_files/media/`
+  Managed imported media.
+- `Packaged sample media`
+  Built-in sample backgrounds distributed with the add-on.
 
-    I -->|"injects CSS / IMG background into"| D
-    J -->|"checks active screen + media config in"| G
-    J -->|"for image media, delegates render to"| I
-    J -->|"for video media, controls"| K
-    K -->|"plays video using"| E
-    K -->|"draws native overlay above"| D
+**Startup and wiring**
 
-    C -->|"screen change hooks trigger refresh in"| J
-    D -->|"shows image background path"| I
-    E -->|"drives playback status / errors for"| K
+1. `Anki startup` loads `__init__.py`.
+2. `__init__.py` creates `ConfigManager`, `WebviewInjector`, and `BackgroundController`.
+3. `__init__.py` registers hooks on the Anki main window and exposes `SettingsDialog` from the Tools menu.
 
-    classDef anki fill:#eef2f7,stroke:#5f6b7a,color:#1a2230
-    classDef addon fill:#f6f1ff,stroke:#7b61ff,color:#241b4b
-    classDef data fill:#eefaf4,stroke:#34a853,color:#163322
-    classDef imagePath fill:#fff5e8,stroke:#ff9800,color:#4a2a00
-    classDef videoPath fill:#e9f4ff,stroke:#1e88e5,color:#0d2a4d
+**Settings flow**
 
-    class A,B,C,D,E anki
-    class F,G,H,J addon
-    class L,M,N data
-    class I imagePath
-    class K videoPath
-```
+1. `SettingsDialog` loads current values from `ConfigManager`.
+2. Live preview and staged changes are sent through `BackgroundController`.
+3. Saving writes normalized settings back through `ConfigManager`.
+
+**Image background path**
+
+1. A supported Anki screen renders into `Qt WebView`.
+2. `BackgroundController` checks screen state and config.
+3. For image media, it delegates to `WebviewInjector`.
+4. `WebviewInjector` injects CSS and an image layer into the webview.
+
+**Video background path**
+
+1. A supported Anki screen renders into `Qt WebView`.
+2. `BackgroundController` checks screen state and config.
+3. For video media, it delegates to `NativeVideoBackground`.
+4. `NativeVideoBackground` plays through the `Qt Multimedia backend`.
+5. The video is drawn as a native overlay above the webview instead of as injected HTML.
+
+**Data access**
+
+- `ConfigManager` reads and writes `user_files/config.json`.
+- `ConfigManager` resolves managed files from `user_files/media/`.
+- `ConfigManager` also resolves packaged default media when present.
+
+**Screen refresh rules**
+
+- Anki screen-change hooks notify `BackgroundController`.
+- `BackgroundController` re-evaluates the current target screen and selected media.
+- If the screen is unsupported, disabled, or media is missing, the add-on clears the active background.
 
 ### Design Patterns
 
