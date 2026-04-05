@@ -18,7 +18,6 @@ from aqt.qt import (
     QLabel,
     QLineEdit,
     QMovie,
-    QPixmap,
     QPushButton,
     QSizePolicy,
     QSlider,
@@ -27,8 +26,8 @@ from aqt.qt import (
     QWidget,
 )
 from aqt.utils import showInfo, showWarning
-from PyQt6.QtCore import QPointF, QSizeF, QTimer, QUrl
-from PyQt6.QtGui import QAction, QDesktopServices
+from PyQt6.QtCore import QPointF, QSizeF, QUrl
+from PyQt6.QtGui import QAction, QDesktopServices, QPixmap
 from PyQt6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PyQt6.QtMultimediaWidgets import QGraphicsVideoItem
 from PyQt6.QtWidgets import (
@@ -46,11 +45,8 @@ from .branding import create_brand_icon, create_brand_pixmap
 VIDEO_EXTENSIONS = {".mp4", ".webm"}
 LARGE_VIDEO_WARNING_BYTES = 50 * 1024 * 1024
 LARGE_GIF_WARNING_BYTES = 20 * 1024 * 1024
-LARGE_IMAGE_WARNING_BYTES = 15 * 1024 * 1024
 PREVIEW_MAX_WIDTH = 480
 PREVIEW_MAX_HEIGHT = 270
-PREVIEW_REVERSE_STEP_INTERVAL_MS = 33
-PREVIEW_REVERSE_SEEK_GUARD_MS = PREVIEW_REVERSE_STEP_INTERVAL_MS * 2
 TRIM_SLIDER_SCALE = 100
 PALETTE_TEXT = "#f7f9fb"
 PALETTE_CYAN = "#11d7d6"
@@ -118,14 +114,11 @@ class SettingsDialog(QDialog):
         self._preview_kind: str | None = None
         self._preview_duration_seconds = 0.0
         self._preview_movie: QMovie | None = None
-        self._preview_pixmap: QPixmap | None = None
         self._approved_large_media_paths: set[str] = set()
         self._trim_start_seconds = float(media_config.get("trim_start", 0.0))
         self._trim_end_seconds = float(media_config.get("trim_end", 0.0))
         self._trim_slider_max_seconds = max(self._trim_start_seconds, self._trim_end_seconds, 1.0)
         self._theme_mode = str(self._view_data.get("theme_mode", "dark"))
-        self._preview_direction = 1
-        self._preview_last_reverse_target_ms: int | None = None
 
         self._last_safe_source_folder = str(media_config.get("source_folder", ""))
         self._last_safe_media_selection = self._initial_selected_name()
@@ -310,7 +303,7 @@ class SettingsDialog(QDialog):
         layout = QFormLayout(group)
 
         self.media_selector = QComboBox(group)
-        self.media_hint = QLabel("Supported: GIF, PNG, JPG, WebM, MP4", group)
+        self.media_hint = QLabel("Supported: GIF, WebM, MP4", group)
         self.media_hint.setObjectName("mediaHintLabel")
         self.folder_input = QLineEdit(str(media_config.get("source_folder", "")), group)
         self.folder_input.setReadOnly(True)
@@ -344,9 +337,6 @@ class SettingsDialog(QDialog):
         )
         self.muted_checkbox = QCheckBox("Mute videos")
         self.muted_checkbox.setChecked(bool(media_config.get("muted", True)))
-        self.bounce_checkbox = QCheckBox("Bounce videos")
-        self.bounce_checkbox.setChecked(bool(media_config.get("bounce", False)))
-
         layout.addRow(
             "Opacity", self._make_resettable_control(opacity_widget, self.opacity_slider, 100, "opacity")
         )
@@ -359,7 +349,6 @@ class SettingsDialog(QDialog):
 
         qconnect(self.muted_checkbox.toggled, self._on_preview_muted_changed)
         qconnect(self.playback_rate_slider.valueChanged, self._on_preview_playback_rate_changed)
-        qconnect(self.bounce_checkbox.toggled, self._on_preview_bounce_changed)
         return group
 
     def _build_trim_group(self) -> QGroupBox:
@@ -374,7 +363,6 @@ class SettingsDialog(QDialog):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(18)
         layout.addWidget(self.muted_checkbox)
-        layout.addWidget(self.bounce_checkbox)
         layout.addStretch(1)
 
         theme_label = QLabel("Theme", footer)
@@ -491,15 +479,12 @@ class SettingsDialog(QDialog):
         self.preview_player = QMediaPlayer(group)
         self.preview_player.setAudioOutput(self.preview_audio_output)
         self.preview_player.setVideoOutput(self.preview_video_item)
-        self.preview_reverse_timer = QTimer(group)
-        self.preview_reverse_timer.setInterval(PREVIEW_REVERSE_STEP_INTERVAL_MS)
 
         qconnect(self.preview_play_button.clicked, self._toggle_preview_playback)
         qconnect(self.preview_player.positionChanged, self._on_preview_position_changed)
         qconnect(self.preview_player.durationChanged, self._on_preview_duration_changed)
         qconnect(self.preview_player.mediaStatusChanged, self._on_preview_media_status_changed)
         qconnect(self.preview_video_item.nativeSizeChanged, self._layout_preview_media_item)
-        qconnect(self.preview_reverse_timer.timeout, self._on_preview_reverse_tick)
         self.preview_play_button.setEnabled(False)
         return group
 
@@ -578,7 +563,8 @@ class SettingsDialog(QDialog):
 
     def _choose_source_folder(self) -> None:
         current_folder = self.folder_input.text().strip()
-        start_folder = current_folder if self.config.resolve_source_folder(current_folder) is not None else ""
+        resolved_current_folder = self.config.resolve_source_folder(current_folder)
+        start_folder = str(resolved_current_folder) if resolved_current_folder is not None else ""
         selected_folder = QFileDialog.getExistingDirectory(
             self, "Choose Background Media Folder", start_folder
         )
@@ -592,7 +578,7 @@ class SettingsDialog(QDialog):
             return
 
         self.folder_input.setText(selected_folder)
-        self._refresh_media_selector(filenames[0])
+        self._refresh_media_selector("")
         if not self._confirm_current_media_selection_or_revert():
             return
 
@@ -649,13 +635,12 @@ class SettingsDialog(QDialog):
         if suffix == ".gif":
             self._show_gif_preview(media_path)
             return
-        self._show_static_image_preview(media_path)
+        self._clear_preview("Select media to preview")
 
     def _clear_preview(self, message: str) -> None:
         self._preview_source = None
         self._preview_kind = None
         self._preview_duration_seconds = 0.0
-        self._preview_pixmap = None
         if self._preview_movie is not None:
             self._preview_movie.stop()
             self._preview_movie = None
@@ -664,14 +649,11 @@ class SettingsDialog(QDialog):
         self.preview_video_item.setVisible(False)
         self.preview_player.stop()
         self.preview_player.setSource(QUrl())
-        self.preview_reverse_timer.stop()
         self._apply_preview_media_style()
         self._layout_preview_media_item()
         self.preview_play_button.setEnabled(False)
         self.preview_play_button.setText("Play")
         self.preview_status_label.setText(message)
-        self._preview_direction = 1
-        self._preview_last_reverse_target_ms = None
 
     def _toggle_preview_playback(self) -> None:
         if self.preview_player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
@@ -688,29 +670,9 @@ class SettingsDialog(QDialog):
         self._update_preview_status(self.preview_player.position())
 
     def _on_preview_position_changed(self, position_ms: int) -> None:
-        if self._preview_direction < 0:
-            if (
-                self._preview_last_reverse_target_ms is not None
-                and abs(position_ms - self._preview_last_reverse_target_ms)
-                <= PREVIEW_REVERSE_SEEK_GUARD_MS
-            ):
-                self._preview_last_reverse_target_ms = None
-                self._update_preview_status(position_ms)
-            return
-
         trim_start = self._trim_start_seconds
         trim_end = self._effective_preview_trim_end()
         current_seconds = position_ms / 1000
-
-        if self.bounce_checkbox.isChecked():
-            effective_end = trim_end or self._preview_duration_seconds
-            if (
-                self._preview_direction > 0
-                and effective_end > trim_start
-                and current_seconds >= effective_end
-            ):
-                self._start_preview_reverse()
-                return
 
         if trim_end > trim_start and current_seconds >= trim_end:
             self.preview_player.setPosition(int(trim_start * 1000))
@@ -720,17 +682,11 @@ class SettingsDialog(QDialog):
         self._update_preview_status(position_ms)
 
     def _on_preview_media_status_changed(self, status: QMediaPlayer.MediaStatus) -> None:
-        if self.bounce_checkbox.isChecked() and status == QMediaPlayer.MediaStatus.EndOfMedia:
-            self._start_preview_reverse()
-            return
         if status == QMediaPlayer.MediaStatus.EndOfMedia:
             self.preview_player.setPosition(int(self._trim_start_seconds * 1000))
             self.preview_player.play()
 
     def _on_preview_trim_changed(self) -> None:
-        if self.bounce_checkbox.isChecked():
-            self._preview_direction = 1
-            self._apply_preview_direction()
         self._apply_preview_trim()
         self._update_preview_status(self.preview_player.position())
         self._apply_live_update()
@@ -743,47 +699,6 @@ class SettingsDialog(QDialog):
         self._apply_preview_direction()
         self._apply_live_update()
 
-    def _on_preview_bounce_changed(self, checked: bool) -> None:
-        self._preview_direction = 1
-        self._apply_preview_direction()
-        if checked:
-            self._apply_preview_trim()
-        self._apply_live_update()
-
-    def _start_preview_reverse(self) -> None:
-        effective_end = self._effective_preview_trim_end() or self._preview_duration_seconds
-        if effective_end <= self._trim_start_seconds:
-            self.preview_player.setPosition(int(self._trim_start_seconds * 1000))
-            self._preview_direction = 1
-            self._apply_preview_direction()
-            self.preview_player.play()
-            return
-
-        self._preview_direction = -1
-        self.preview_player.setPosition(int(effective_end * 1000))
-        self._apply_preview_direction()
-
-    def _on_preview_reverse_tick(self) -> None:
-        step_ms = max(
-            1,
-            int(PREVIEW_REVERSE_STEP_INTERVAL_MS * self._slider_value(self.playback_rate_slider, 100)),
-        )
-        current_ms = self.preview_player.position()
-        target_ms = current_ms - step_ms
-        start_ms = int(self._trim_start_seconds * 1000)
-
-        if target_ms <= start_ms:
-            self.preview_reverse_timer.stop()
-            self._preview_direction = 1
-            self._preview_last_reverse_target_ms = None
-            self.preview_player.setPosition(start_ms)
-            self._apply_preview_direction()
-            self.preview_player.play()
-            return
-
-        self._preview_last_reverse_target_ms = target_ms
-        self.preview_player.setPosition(target_ms)
-
     def _apply_preview_trim(self) -> None:
         if self._preview_source is None:
             return
@@ -791,10 +706,6 @@ class SettingsDialog(QDialog):
         trim_start = self._trim_start_seconds
         if self._preview_duration_seconds <= 0:
             return
-
-        if self.bounce_checkbox.isChecked():
-            self._preview_direction = 1
-            self._apply_preview_direction()
 
         if 0 <= trim_start < self._preview_duration_seconds:
             self.preview_player.setPosition(int(trim_start * 1000))
@@ -821,13 +732,11 @@ class SettingsDialog(QDialog):
         if self._preview_movie is not None:
             self._preview_movie.stop()
             self._preview_movie = None
-        self._preview_pixmap = None
         self._preview_kind = "video"
         self.preview_image_item.setVisible(False)
         self.preview_video_item.setVisible(True)
         if self.preview_player.source().toLocalFile() != str(media_path):
             self._preview_duration_seconds = 0.0
-            self._preview_direction = 1
             self.preview_player.setSource(QUrl.fromLocalFile(str(media_path)))
         self.preview_audio_output.setMuted(self.muted_checkbox.isChecked())
         self._apply_preview_direction()
@@ -847,7 +756,6 @@ class SettingsDialog(QDialog):
         self.preview_play_button.setEnabled(False)
         self.preview_play_button.setText("Play")
         self._preview_duration_seconds = 0.0
-        self._preview_pixmap = None
         self._preview_kind = "gif"
         self._update_trim_slider_window()
 
@@ -860,28 +768,6 @@ class SettingsDialog(QDialog):
         self._on_preview_movie_frame_changed()
         self._apply_preview_media_style()
         self._preview_movie.start()
-        self.preview_status_label.setText(media_path.name)
-
-    def _show_static_image_preview(self, media_path: Path) -> None:
-        if self._preview_movie is not None:
-            self._preview_movie.stop()
-            self._preview_movie = None
-
-        self.preview_player.stop()
-        self.preview_player.setSource(QUrl())
-        self.preview_video_item.setVisible(False)
-        self.preview_image_item.setVisible(True)
-        self.preview_play_button.setEnabled(False)
-        self.preview_play_button.setText("Play")
-        self._preview_duration_seconds = 0.0
-        self._preview_kind = "image"
-        self._update_trim_slider_window()
-
-        if self._preview_source != media_path or self._preview_pixmap is None:
-            self._preview_pixmap = QPixmap(str(media_path))
-        self.preview_image_item.setPixmap(self._preview_pixmap)
-        self._apply_preview_media_style()
-        self._layout_preview_media_item()
         self.preview_status_label.setText(media_path.name)
 
     def _on_preview_movie_frame_changed(self, _frame: int | None = None) -> None:
@@ -901,7 +787,7 @@ class SettingsDialog(QDialog):
             self._fit_preview_item(self.preview_video_item, native_size, scene_rect)
             return
 
-        if self._preview_kind in {"image", "gif"} and self.preview_image_item.isVisible():
+        if self._preview_kind == "gif" and self.preview_image_item.isVisible():
             pixmap = self.preview_image_item.pixmap()
             if pixmap.isNull():
                 self.preview_image_item.setPos(scene_rect.topLeft())
@@ -939,7 +825,7 @@ class SettingsDialog(QDialog):
         if self._preview_kind == "video":
             active_item = self.preview_video_item
             inactive_item = self.preview_image_item
-        elif self._preview_kind in {"image", "gif"}:
+        elif self._preview_kind == "gif":
             active_item = self.preview_image_item
             inactive_item = self.preview_video_item
 
@@ -1022,9 +908,8 @@ class SettingsDialog(QDialog):
         elif selected_file:
             resolved_media_path = self.config.media_path(selected_file)
             if not resolved_media_path.is_file():
-                available_files = self.config.list_media_files()
-                selected_file = available_files[0] if available_files else ""
-                resolved_media_path = self.config.media_path(selected_file) if selected_file else None
+                selected_file = ""
+                resolved_media_path = None
             if resolved_media_path is not None and not resolved_media_path.is_file():
                 resolved_media_path = None
 
@@ -1046,7 +931,6 @@ class SettingsDialog(QDialog):
                 "blur": self.blur_slider.value(),
                 "zoom": self._slider_value(self.zoom_slider, 100),
                 "muted": self.muted_checkbox.isChecked(),
-                "bounce": self.bounce_checkbox.isChecked(),
                 "playback_rate": self._slider_value(self.playback_rate_slider, 100),
             },
         }
@@ -1126,7 +1010,6 @@ class SettingsDialog(QDialog):
             self.trim_start_slider,
             self.trim_end_slider,
             self.muted_checkbox,
-            self.bounce_checkbox,
             *self.target_checkboxes.values(),
         ]
         for widget in widgets_to_block:
@@ -1146,7 +1029,6 @@ class SettingsDialog(QDialog):
         self.zoom_slider.setValue(int(round(float(media_config.get("zoom", 1.0)) * 100)))
         self.playback_rate_slider.setValue(int(round(float(media_config.get("playback_rate", 1.0)) * 100)))
         self.muted_checkbox.setChecked(bool(media_config.get("muted", True)))
-        self.bounce_checkbox.setChecked(bool(media_config.get("bounce", False)))
         self.trim_start_slider.setValue(int(round(self._trim_start_seconds * TRIM_SLIDER_SCALE)))
         self.trim_end_slider.setValue(
             self._trim_end_seconds_to_slider_value(self._trim_end_seconds, self.trim_end_slider.maximum())
@@ -1192,9 +1074,6 @@ class SettingsDialog(QDialog):
         self.trim_start_slider.setToolTip("Sets where video playback should begin in the loop.")
         self.trim_end_slider.setToolTip("Sets where video playback should end before looping back.")
         self.muted_checkbox.setToolTip("Keeps video backgrounds silent.")
-        self.bounce_checkbox.setToolTip(
-            "Reverses video playback at the loop boundaries instead of jumping back to the start."
-        )
         self.preview_play_button.setToolTip(
             "Play or pause the embedded preview without affecting the rest of Anki."
         )
@@ -1243,12 +1122,9 @@ class SettingsDialog(QDialog):
         if suffix in VIDEO_EXTENSIONS:
             threshold = LARGE_VIDEO_WARNING_BYTES
             media_label = "video"
-        elif suffix == ".gif":
+        else:
             threshold = LARGE_GIF_WARNING_BYTES
             media_label = "GIF"
-        else:
-            threshold = LARGE_IMAGE_WARNING_BYTES
-            media_label = "image"
 
         if file_size < threshold:
             return ""
@@ -1417,15 +1293,6 @@ QMessageBox QPushButton:pressed {{
 
     def _apply_preview_direction(self) -> None:
         playback_rate = self._slider_value(self.playback_rate_slider, 100)
-        if self.bounce_checkbox.isChecked() and self._preview_direction < 0:
-            self.preview_player.pause()
-            self.preview_player.setPlaybackRate(playback_rate)
-            if not self.preview_reverse_timer.isActive():
-                self.preview_reverse_timer.start()
-            return
-
-        self.preview_reverse_timer.stop()
-        self._preview_last_reverse_target_ms = None
         self.preview_player.setPlaybackRate(playback_rate)
 
     def _apply_site_palette(self) -> None:

@@ -10,7 +10,7 @@ from typing import Any
 
 from ..common.constants import ADDON_CONSTANTS
 
-SUPPORTED_MEDIA_EXTENSIONS = {".gif", ".jpg", ".jpeg", ".png", ".webm", ".mp4"}
+SUPPORTED_MEDIA_EXTENSIONS = {".gif", ".webm", ".mp4"}
 PACKAGED_DEFAULT_SOURCE_FOLDER_NAME = "Wallpapers_anki"
 
 DEFAULT_CONFIG: dict[str, Any] = {
@@ -31,7 +31,6 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "blur": 0,
         "zoom": 1.0,
         "muted": True,
-        "bounce": False,
         "playback_rate": 1.0,
     },
 }
@@ -122,9 +121,7 @@ class ConfigManager:
         if packaged_folder is None:
             return default_data
 
-        default_files = self.list_source_folder_files(str(packaged_folder))
         default_data["media"]["source_folder"] = self.serialize_source_folder(packaged_folder)
-        default_data["media"]["selected_file"] = default_files[0] if default_files else ""
         return default_data
 
     def normalize_data(self, data: dict[str, Any] | None) -> dict[str, Any]:
@@ -172,7 +169,6 @@ class ConfigManager:
             "blur": _clamp_int(media.get("blur", 0), 0, 0, 24),
             "zoom": _clamp_float(media.get("zoom", 1.0), 1.0, 1.0, 1.6),
             "muted": _coerce_bool(media.get("muted", True), True),
-            "bounce": _coerce_bool(media.get("bounce", False), False),
             "playback_rate": _clamp_float(media.get("playback_rate", 1.0), 1.0, 0.25, 3.0),
         }
 
@@ -248,7 +244,7 @@ class ConfigManager:
 
         extension = source.suffix.lower()
         if extension not in SUPPORTED_MEDIA_EXTENSIONS:
-            raise ValueError("Supported formats: gif, png, jpg, jpeg, webm, mp4.")
+            raise ValueError("Supported formats: gif, webm, mp4.")
 
         self.media_dir.mkdir(parents=True, exist_ok=True)
         existing_match = self._find_existing_managed_match(source)
@@ -332,11 +328,13 @@ class ConfigManager:
         source_folder = resolved_media_config.get("source_folder", "")
         if isinstance(source_folder, str) and source_folder:
             source_path = self.resolve_source_folder_media_path(source_folder, selected_file)
-            if source_path is not None:
+            if source_path is not None and source_path.suffix.lower() in SUPPORTED_MEDIA_EXTENSIONS:
                 return source_path
 
         managed_path = self.media_path(selected_file)
-        return managed_path.resolve() if managed_path.is_file() else None
+        if managed_path.is_file() and managed_path.suffix.lower() in SUPPORTED_MEDIA_EXTENSIONS:
+            return managed_path.resolve()
+        return None
 
     def _temporary_media_path(self, extension: str) -> Path:
         index = 0
@@ -372,13 +370,13 @@ class ConfigManager:
             files = self.list_source_folder_files(source_folder)
             if selected and selected in files:
                 return
-            media_config["selected_file"] = files[0] if files else ""
+            media_config["selected_file"] = ""
             return
 
         files = self.list_media_files()
         if selected and selected in files:
             return
-        media_config["selected_file"] = files[0] if files else ""
+        media_config["selected_file"] = ""
 
     def remove_managed_media_files(self) -> list[str]:
         if not self.media_dir.exists():

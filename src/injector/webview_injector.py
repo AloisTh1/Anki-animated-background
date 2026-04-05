@@ -49,7 +49,7 @@ class WebviewInjector:
         if media_path.suffix.lower() in VIDEO_EXTENSIONS:
             return
 
-        html_snippet = self._build_html(media_url, False, media_config)
+        html_snippet = self._build_html(media_url)
         web_content.body = html_snippet + web_content.body
 
     def _resolve_target(self, context: Any) -> str | None:
@@ -91,8 +91,7 @@ body {{
     overflow: hidden;
 }}
 
-#animated-background-media-root img,
-#animated-background-media-root video {{
+#animated-background-media-root img {{
     width: 100%;
     height: 100%;
     object-fit: cover;
@@ -102,23 +101,8 @@ body {{
 }}
 """
 
-    def _build_html(self, media_url: str, is_video: bool, media_config: dict[str, Any]) -> str:
+    def _build_html(self, media_url: str) -> str:
         escaped_url = html.escape(media_url, quote=True)
-        if is_video:
-            muted_attr = " muted" if bool(media_config.get("muted", True)) else ""
-            playback_rate = self._clamp_float(media_config.get("playback_rate", 1.0), 0.25, 3.0)
-            trim_start = self._clamp_float(media_config.get("trim_start", 0.0), 0.0, 86_400.0)
-            trim_end = self._clamp_float(media_config.get("trim_end", 0.0), 0.0, 86_400.0)
-            return (
-                '<div id="animated-background-media-root">'
-                f'<video id="animated-background-media" autoplay loop playsinline preload="auto"{muted_attr} '
-                f'src="{escaped_url}" '
-                f'data-playback-rate="{playback_rate}" '
-                f'data-muted="{str(bool(media_config.get("muted", True))).lower()}" '
-                f'data-trim-start="{trim_start}" '
-                f'data-trim-end="{trim_end}"></video></div>'
-            )
-
         return (
             '<div id="animated-background-media-root">'
             f'<img id="animated-background-media" src="{escaped_url}" alt="Animated background"></div>'

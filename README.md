@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  Animated image and video backgrounds for Anki, with live preview and per-screen controls.
+Animated GIF and video backgrounds for Anki, with live preview and per-screen controls.
 </p>
 
 <p align="center">
@@ -14,21 +14,18 @@
 
 ## Overview
 
-AnkiAnimatedBackground adds animated or static backgrounds to Anki's core study surfaces while keeping the add-on workflow focused on real usage:
+AnkiAnimatedBackground adds animated backgrounds to Anki's core study surfaces while keeping the add-on workflow focused on real usage:
 
 - Reviewer support for card study sessions
 - Deck Browser support for navigation and deck selection
 - Overview support for deck landing pages
 - Live preview in the settings dialog before saving changes
 - Support for packaged sample media and user-selected local folders
-- Controls for opacity, blur, zoom, trim, mute, bounce, and playback speed
+- Controls for opacity, blur, zoom, trim, mute, and playback speed
 
 Supported media formats:
 
 - `gif`
-- `png`
-- `jpg`
-- `jpeg`
 - `webm`
 - `mp4`
 
@@ -57,7 +54,6 @@ Supported media formats:
    - Playback rate
    - Trim start / trim end
    - Mute
-   - Bounce
 5. Watch the live preview panel to confirm the result.
 6. Click `Save Settings`.
 

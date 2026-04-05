@@ -15,7 +15,6 @@ from aqt.qt import (
     QPointF,
     QSizeF,
     Qt,
-    QTimer,
     qconnect,
 )
 from aqt.theme import theme_manager
@@ -27,9 +26,6 @@ from PyQt6.QtMultimediaWidgets import QGraphicsVideoItem
 
 from ..config.config_manager import ConfigManager
 from .webview_injector import VIDEO_EXTENSIONS, WebviewInjector
-
-REVERSE_STEP_INTERVAL_MS = 33
-REVERSE_SEEK_GUARD_MS = REVERSE_STEP_INTERVAL_MS * 2
 
 STATE_TO_TARGET = {
     "review": "reviewer",
@@ -47,12 +43,9 @@ class NativeVideoBackground(QObject):
         self._trim_start = 0.0
         self._trim_end = 0.0
         self._zoom = 1.0
-        self._bounce = False
-        self._direction = 1
         self._playback_rate = 1.0
         self._on_error = on_error
         self._has_error = False
-        self._last_reverse_target_ms: int | None = None
 
         parent = webview.parentWidget()
         if parent is None:
@@ -81,10 +74,6 @@ class NativeVideoBackground(QObject):
         self.player = QMediaPlayer(self.view)
         self.player.setAudioOutput(self.audio_output)
         self.player.setVideoOutput(self.video_item)
-
-        self._reverse_timer = QTimer(self.view)
-        self._reverse_timer.setInterval(REVERSE_STEP_INTERVAL_MS)
-        qconnect(self._reverse_timer.timeout, self._on_reverse_tick)
 
         qconnect(self.player.positionChanged, self._on_position_changed)
         qconnect(self.player.durationChanged, self._on_duration_changed)
@@ -116,18 +105,14 @@ class NativeVideoBackground(QObject):
             self._has_error = False
             self._source = resolved
             self._duration_seconds = 0.0
-            self._direction = 1
             self.player.setSource(QUrl.fromLocalFile(str(resolved)))
 
         self._trim_start = self._clamp_float(media_config.get("trim_start", 0.0), 0.0, 86_400.0)
         self._trim_end = self._clamp_float(media_config.get("trim_end", 0.0), 0.0, 86_400.0)
         self._zoom = self._clamp_float(media_config.get("zoom", 1.0), 1.0, 1.6)
-        self._bounce = bool(media_config.get("bounce", False))
         self._playback_rate = self._clamp_float(media_config.get("playback_rate", 1.0), 0.25, 3.0)
 
         self.audio_output.setMuted(bool(media_config.get("muted", True)))
-        if not self._bounce:
-            self._direction = 1
         self._apply_playback_direction()
         self.video_item.setOpacity(self._clamp_float(media_config.get("opacity", 0.35), 0.0, 1.0))
         self._set_blur(self._clamp_int(media_config.get("blur", 0), 0, 24))
@@ -144,9 +129,6 @@ class NativeVideoBackground(QObject):
         self.player.play()
 
     def hide(self) -> None:
-        self._reverse_timer.stop()
-        self._direction = 1
-        self._last_reverse_target_ms = None
         self.player.stop()
         self.view.hide()
 
@@ -168,21 +150,7 @@ class NativeVideoBackground(QObject):
         self._sync_video_geometry()
 
     def _on_position_changed(self, position_ms: int) -> None:
-        if self._direction < 0:
-            if (
-                self._last_reverse_target_ms is not None
-                and abs(position_ms - self._last_reverse_target_ms) <= REVERSE_SEEK_GUARD_MS
-            ):
-                self._last_reverse_target_ms = None
-            return
-
         current_seconds = position_ms / 1000
-        if self._bounce:
-            trim_end = self._effective_trim_end() or self._duration_seconds
-            if trim_end > self._trim_start and current_seconds >= trim_end:
-                self._start_reverse()
-                return
-
         effective_trim_end = self._effective_trim_end()
         if effective_trim_end > self._trim_start and current_seconds >= effective_trim_end:
             self.player.setPosition(int(self._trim_start * 1000))
@@ -191,42 +159,8 @@ class NativeVideoBackground(QObject):
     def _on_media_status_changed(self, status: QMediaPlayer.MediaStatus) -> None:
         if status != QMediaPlayer.MediaStatus.EndOfMedia:
             return
-        if self._bounce:
-            self._start_reverse()
-            return
         self.player.setPosition(int(self._trim_start * 1000))
         self.player.play()
-
-    def _start_reverse(self) -> None:
-        end_seconds = self._effective_trim_end() or self._duration_seconds
-        if end_seconds <= self._trim_start:
-            self.player.setPosition(int(self._trim_start * 1000))
-            self._direction = 1
-            self._apply_playback_direction()
-            self.player.play()
-            return
-
-        self._direction = -1
-        self.player.setPosition(int(end_seconds * 1000))
-        self._apply_playback_direction()
-
-    def _on_reverse_tick(self) -> None:
-        step_ms = max(1, int(REVERSE_STEP_INTERVAL_MS * self._playback_rate))
-        current_ms = self.player.position()
-        target_ms = current_ms - step_ms
-        start_ms = int(self._trim_start * 1000)
-
-        if target_ms <= start_ms:
-            self._reverse_timer.stop()
-            self._direction = 1
-            self._last_reverse_target_ms = None
-            self.player.setPosition(start_ms)
-            self._apply_playback_direction()
-            self.player.play()
-            return
-
-        self._last_reverse_target_ms = target_ms
-        self.player.setPosition(target_ms)
 
     def _on_error_occurred(self, error: QMediaPlayer.Error, message: str = "") -> None:
         self._has_error = True
@@ -250,10 +184,6 @@ class NativeVideoBackground(QObject):
     def _sync_playback_to_trim_window(self) -> None:
         if self._duration_seconds <= 0:
             return
-
-        if self._bounce:
-            self._direction = 1
-            self._apply_playback_direction()
 
         current_seconds = self.player.position() / 1000
         effective_trim_end = self._effective_trim_end()
@@ -313,15 +243,6 @@ class NativeVideoBackground(QObject):
             return minimum
 
     def _apply_playback_direction(self) -> None:
-        if self._direction < 0:
-            self.player.pause()
-            self.player.setPlaybackRate(self._playback_rate)
-            if not self._reverse_timer.isActive():
-                self._reverse_timer.start()
-            return
-
-        self._reverse_timer.stop()
-        self._last_reverse_target_ms = None
         self.player.setPlaybackRate(self._playback_rate)
 
 
@@ -404,7 +325,7 @@ class BackgroundController:
             return
 
         self._inject_live_style(media_config)
-        html_snippet = self.injector._build_html(media_url, False, media_config)
+        html_snippet = self.injector._build_html(media_url)
         script = f"""
 (() => {{
     const existing = document.getElementById("animated-background-media-root");
