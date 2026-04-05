@@ -6,6 +6,7 @@ from typing import Any
 
 from aqt import colors, mw
 from aqt.qt import (
+    QColor,
     QEvent,
     QFrame,
     QGraphicsBlurEffect,
@@ -14,13 +15,14 @@ from aqt.qt import (
     QObject,
     QPointF,
     QSizeF,
+    QUrl,
     Qt,
     qconnect,
 )
 from aqt.theme import theme_manager
 from aqt.webview import AnkiWebView
-from PyQt6.QtCore import QUrl
-from PyQt6.QtGui import QColor
+
+# Keep multimedia direct: Anki's aqt.qt re-export surface is less reliable here.
 from PyQt6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PyQt6.QtMultimediaWidgets import QGraphicsVideoItem
 

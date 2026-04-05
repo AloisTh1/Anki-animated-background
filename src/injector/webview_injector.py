@@ -5,8 +5,8 @@ from pathlib import Path
 from typing import Any
 
 from aqt import mw
+from aqt.qt import QUrl
 from aqt.webview import WebContent
-from PyQt6.QtCore import QUrl
 
 from ..config.config_manager import ConfigManager
 

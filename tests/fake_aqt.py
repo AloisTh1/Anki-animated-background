@@ -6,8 +6,8 @@ import types
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtCore import QRect, QSize, Qt
-from PyQt6.QtGui import QColor, QFont, QIcon, QMovie, QPainter, QPen, QPixmap
+from PyQt6.QtCore import QPointF, QRect, QSize, QSizeF, Qt, QUrl
+from PyQt6.QtGui import QAction, QColor, QDesktopServices, QFont, QIcon, QMovie, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -18,12 +18,15 @@ from PyQt6.QtWidgets import (
     QFormLayout,
     QFrame,
     QGraphicsBlurEffect,
+    QGraphicsPixmapItem,
     QGraphicsScene,
     QGraphicsView,
     QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMenu,
+    QMessageBox,
     QPushButton,
     QSizePolicy,
     QSlider,
@@ -43,9 +46,11 @@ def install_fake_aqt() -> None:
 
     qt_module = types.ModuleType("aqt.qt")
     qt_module.QApplication = QApplication
+    qt_module.QAction = QAction
     qt_module.QCheckBox = QCheckBox
     qt_module.QColor = QColor
     qt_module.QComboBox = QComboBox
+    qt_module.QDesktopServices = QDesktopServices
     qt_module.QDialog = QDialog
     qt_module.QDialogButtonBox = QDialogButtonBox
     qt_module.QFileDialog = QFileDialog
@@ -53,6 +58,7 @@ def install_fake_aqt() -> None:
     qt_module.QFormLayout = QFormLayout
     qt_module.QFrame = QFrame
     qt_module.QGraphicsBlurEffect = QGraphicsBlurEffect
+    qt_module.QGraphicsPixmapItem = QGraphicsPixmapItem
     qt_module.QGraphicsScene = QGraphicsScene
     qt_module.QGraphicsView = QGraphicsView
     qt_module.QGroupBox = QGroupBox
@@ -60,17 +66,22 @@ def install_fake_aqt() -> None:
     qt_module.QIcon = QIcon
     qt_module.QLabel = QLabel
     qt_module.QLineEdit = QLineEdit
+    qt_module.QMenu = QMenu
+    qt_module.QMessageBox = QMessageBox
     qt_module.QMovie = QMovie
     qt_module.QPainter = QPainter
     qt_module.QPen = QPen
+    qt_module.QPointF = QPointF
     qt_module.QPixmap = QPixmap
     qt_module.QPushButton = QPushButton
     qt_module.QRect = QRect
     qt_module.QSize = QSize
+    qt_module.QSizeF = QSizeF
     qt_module.QSizePolicy = QSizePolicy
     qt_module.QSlider = QSlider
     qt_module.QStackedWidget = QStackedWidget
     qt_module.Qt = Qt
+    qt_module.QUrl = QUrl
     qt_module.QVBoxLayout = QVBoxLayout
     qt_module.QWidget = QWidget
 

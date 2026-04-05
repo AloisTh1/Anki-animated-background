@@ -7,12 +7,16 @@ from copy import deepcopy
 from pathlib import Path
 from unittest import mock
 
-from PyQt6.QtWidgets import QApplication
-
-from src.config.config_manager import ConfigManager
 from tests.fake_aqt import install_fake_aqt
 
 install_fake_aqt()
+
+aqt_qt = importlib.import_module("aqt.qt")
+QApplication = aqt_qt.QApplication
+
+config_manager_module = importlib.import_module("src.config.config_manager")
+ConfigManager = config_manager_module.ConfigManager
+
 settings_dialog_module = importlib.import_module("src.view.settings_dialog")
 SettingsDialog = settings_dialog_module.SettingsDialog
 

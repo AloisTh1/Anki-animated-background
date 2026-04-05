@@ -7,37 +7,41 @@ from pathlib import Path
 
 from aqt import qconnect
 from aqt.qt import (
+    QAction,
     QCheckBox,
     QComboBox,
+    QDesktopServices,
     QDialog,
     QFileDialog,
     QFormLayout,
     QFrame,
+    QGraphicsBlurEffect,
+    QGraphicsPixmapItem,
+    QGraphicsScene,
+    QGraphicsView,
     QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMenu,
+    QMessageBox,
     QMovie,
+    QPointF,
+    QPixmap,
     QPushButton,
+    QSizeF,
     QSizePolicy,
     QSlider,
+    QUrl,
     Qt,
     QVBoxLayout,
     QWidget,
 )
 from aqt.utils import showInfo, showWarning
-from PyQt6.QtCore import QPointF, QSizeF, QUrl
-from PyQt6.QtGui import QAction, QDesktopServices, QPixmap
+
+# Keep multimedia direct: Anki's aqt.qt re-export surface is less reliable here.
 from PyQt6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PyQt6.QtMultimediaWidgets import QGraphicsVideoItem
-from PyQt6.QtWidgets import (
-    QGraphicsBlurEffect,
-    QGraphicsPixmapItem,
-    QGraphicsScene,
-    QGraphicsView,
-    QMenu,
-    QMessageBox,
-)
 
 from ..config.config_manager import DEFAULT_CONFIG, ConfigManager
 from .branding import create_brand_icon, create_brand_pixmap
