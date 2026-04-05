@@ -27,7 +27,7 @@ from aqt.qt import (
     QWidget,
 )
 from aqt.utils import showInfo, showWarning
-from PyQt6.QtCore import QPointF, QSizeF, QUrl
+from PyQt6.QtCore import QPointF, QSizeF, QTimer, QUrl
 from PyQt6.QtGui import QAction, QDesktopServices
 from PyQt6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PyQt6.QtMultimediaWidgets import QGraphicsVideoItem
@@ -49,6 +49,8 @@ LARGE_GIF_WARNING_BYTES = 20 * 1024 * 1024
 LARGE_IMAGE_WARNING_BYTES = 15 * 1024 * 1024
 PREVIEW_MAX_WIDTH = 480
 PREVIEW_MAX_HEIGHT = 270
+PREVIEW_REVERSE_STEP_INTERVAL_MS = 33
+PREVIEW_REVERSE_SEEK_GUARD_MS = PREVIEW_REVERSE_STEP_INTERVAL_MS * 2
 TRIM_SLIDER_SCALE = 100
 PALETTE_TEXT = "#f7f9fb"
 PALETTE_CYAN = "#11d7d6"
@@ -123,6 +125,7 @@ class SettingsDialog(QDialog):
         self._trim_slider_max_seconds = max(self._trim_start_seconds, self._trim_end_seconds, 1.0)
         self._theme_mode = str(self._view_data.get("theme_mode", "dark"))
         self._preview_direction = 1
+        self._preview_last_reverse_target_ms: int | None = None
 
         self._last_safe_source_folder = str(media_config.get("source_folder", ""))
         self._last_safe_media_selection = self._initial_selected_name()
@@ -488,12 +491,15 @@ class SettingsDialog(QDialog):
         self.preview_player = QMediaPlayer(group)
         self.preview_player.setAudioOutput(self.preview_audio_output)
         self.preview_player.setVideoOutput(self.preview_video_item)
+        self.preview_reverse_timer = QTimer(group)
+        self.preview_reverse_timer.setInterval(PREVIEW_REVERSE_STEP_INTERVAL_MS)
 
         qconnect(self.preview_play_button.clicked, self._toggle_preview_playback)
         qconnect(self.preview_player.positionChanged, self._on_preview_position_changed)
         qconnect(self.preview_player.durationChanged, self._on_preview_duration_changed)
         qconnect(self.preview_player.mediaStatusChanged, self._on_preview_media_status_changed)
         qconnect(self.preview_video_item.nativeSizeChanged, self._layout_preview_media_item)
+        qconnect(self.preview_reverse_timer.timeout, self._on_preview_reverse_tick)
         self.preview_play_button.setEnabled(False)
         return group
 
@@ -658,12 +664,14 @@ class SettingsDialog(QDialog):
         self.preview_video_item.setVisible(False)
         self.preview_player.stop()
         self.preview_player.setSource(QUrl())
+        self.preview_reverse_timer.stop()
         self._apply_preview_media_style()
         self._layout_preview_media_item()
         self.preview_play_button.setEnabled(False)
         self.preview_play_button.setText("Play")
         self.preview_status_label.setText(message)
         self._preview_direction = 1
+        self._preview_last_reverse_target_ms = None
 
     def _toggle_preview_playback(self) -> None:
         if self.preview_player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
@@ -680,6 +688,16 @@ class SettingsDialog(QDialog):
         self._update_preview_status(self.preview_player.position())
 
     def _on_preview_position_changed(self, position_ms: int) -> None:
+        if self._preview_direction < 0:
+            if (
+                self._preview_last_reverse_target_ms is not None
+                and abs(position_ms - self._preview_last_reverse_target_ms)
+                <= PREVIEW_REVERSE_SEEK_GUARD_MS
+            ):
+                self._preview_last_reverse_target_ms = None
+                self._update_preview_status(position_ms)
+            return
+
         trim_start = self._trim_start_seconds
         trim_end = self._effective_preview_trim_end()
         current_seconds = position_ms / 1000
@@ -691,16 +709,7 @@ class SettingsDialog(QDialog):
                 and effective_end > trim_start
                 and current_seconds >= effective_end
             ):
-                self.preview_player.setPosition(int(effective_end * 1000))
-                self._preview_direction = -1
-                self._apply_preview_direction()
-                self.preview_player.play()
-                return
-            if self._preview_direction < 0 and current_seconds <= trim_start:
-                self.preview_player.setPosition(int(trim_start * 1000))
-                self._preview_direction = 1
-                self._apply_preview_direction()
-                self.preview_player.play()
+                self._start_preview_reverse()
                 return
 
         if trim_end > trim_start and current_seconds >= trim_end:
@@ -712,11 +721,7 @@ class SettingsDialog(QDialog):
 
     def _on_preview_media_status_changed(self, status: QMediaPlayer.MediaStatus) -> None:
         if self.bounce_checkbox.isChecked() and status == QMediaPlayer.MediaStatus.EndOfMedia:
-            effective_end = self._effective_preview_trim_end() or self._preview_duration_seconds
-            self.preview_player.setPosition(int(effective_end * 1000))
-            self._preview_direction = -1
-            self._apply_preview_direction()
-            self.preview_player.play()
+            self._start_preview_reverse()
             return
         if status == QMediaPlayer.MediaStatus.EndOfMedia:
             self.preview_player.setPosition(int(self._trim_start_seconds * 1000))
@@ -744,6 +749,40 @@ class SettingsDialog(QDialog):
         if checked:
             self._apply_preview_trim()
         self._apply_live_update()
+
+    def _start_preview_reverse(self) -> None:
+        effective_end = self._effective_preview_trim_end() or self._preview_duration_seconds
+        if effective_end <= self._trim_start_seconds:
+            self.preview_player.setPosition(int(self._trim_start_seconds * 1000))
+            self._preview_direction = 1
+            self._apply_preview_direction()
+            self.preview_player.play()
+            return
+
+        self._preview_direction = -1
+        self.preview_player.setPosition(int(effective_end * 1000))
+        self._apply_preview_direction()
+
+    def _on_preview_reverse_tick(self) -> None:
+        step_ms = max(
+            1,
+            int(PREVIEW_REVERSE_STEP_INTERVAL_MS * self._slider_value(self.playback_rate_slider, 100)),
+        )
+        current_ms = self.preview_player.position()
+        target_ms = current_ms - step_ms
+        start_ms = int(self._trim_start_seconds * 1000)
+
+        if target_ms <= start_ms:
+            self.preview_reverse_timer.stop()
+            self._preview_direction = 1
+            self._preview_last_reverse_target_ms = None
+            self.preview_player.setPosition(start_ms)
+            self._apply_preview_direction()
+            self.preview_player.play()
+            return
+
+        self._preview_last_reverse_target_ms = target_ms
+        self.preview_player.setPosition(target_ms)
 
     def _apply_preview_trim(self) -> None:
         if self._preview_source is None:
@@ -1378,8 +1417,16 @@ QMessageBox QPushButton:pressed {{
 
     def _apply_preview_direction(self) -> None:
         playback_rate = self._slider_value(self.playback_rate_slider, 100)
-        direction = self._preview_direction if self.bounce_checkbox.isChecked() else 1
-        self.preview_player.setPlaybackRate(playback_rate * direction)
+        if self.bounce_checkbox.isChecked() and self._preview_direction < 0:
+            self.preview_player.pause()
+            self.preview_player.setPlaybackRate(playback_rate)
+            if not self.preview_reverse_timer.isActive():
+                self.preview_reverse_timer.start()
+            return
+
+        self.preview_reverse_timer.stop()
+        self._preview_last_reverse_target_ms = None
+        self.preview_player.setPlaybackRate(playback_rate)
 
     def _apply_site_palette(self) -> None:
         theme = LIGHT_THEME if self._theme_mode == "light" else DARK_THEME
@@ -1530,6 +1577,24 @@ QDialog#animatedBackgroundDialog QPushButton#supportButton {{
     min-width: 154px;
     padding: 11px 18px;
     font-size: 15px;
+}}
+
+QDialog#animatedBackgroundDialog QMenu {{
+    background: {theme["panel"]};
+    color: {theme["text"]};
+    border: 1px solid {theme["border"]};
+    padding: 6px 0;
+}}
+
+QDialog#animatedBackgroundDialog QMenu::item {{
+    padding: 8px 18px;
+    background: transparent;
+    color: {theme["text"]};
+}}
+
+QDialog#animatedBackgroundDialog QMenu::item:selected {{
+    background: {theme["selection"]};
+    color: {theme["text"]};
 }}
 
 QDialog#animatedBackgroundDialog QCheckBox#enabledSwitch {{

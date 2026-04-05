@@ -29,6 +29,7 @@ from ..config.config_manager import ConfigManager
 from .webview_injector import VIDEO_EXTENSIONS, WebviewInjector
 
 REVERSE_STEP_INTERVAL_MS = 33
+REVERSE_SEEK_GUARD_MS = REVERSE_STEP_INTERVAL_MS * 2
 
 STATE_TO_TARGET = {
     "review": "reviewer",
@@ -51,6 +52,7 @@ class NativeVideoBackground(QObject):
         self._playback_rate = 1.0
         self._on_error = on_error
         self._has_error = False
+        self._last_reverse_target_ms: int | None = None
 
         parent = webview.parentWidget()
         if parent is None:
@@ -144,6 +146,7 @@ class NativeVideoBackground(QObject):
     def hide(self) -> None:
         self._reverse_timer.stop()
         self._direction = 1
+        self._last_reverse_target_ms = None
         self.player.stop()
         self.view.hide()
 
@@ -166,6 +169,11 @@ class NativeVideoBackground(QObject):
 
     def _on_position_changed(self, position_ms: int) -> None:
         if self._direction < 0:
+            if (
+                self._last_reverse_target_ms is not None
+                and abs(position_ms - self._last_reverse_target_ms) <= REVERSE_SEEK_GUARD_MS
+            ):
+                self._last_reverse_target_ms = None
             return
 
         current_seconds = position_ms / 1000
@@ -211,11 +219,13 @@ class NativeVideoBackground(QObject):
         if target_ms <= start_ms:
             self._reverse_timer.stop()
             self._direction = 1
+            self._last_reverse_target_ms = None
             self.player.setPosition(start_ms)
             self._apply_playback_direction()
             self.player.play()
             return
 
+        self._last_reverse_target_ms = target_ms
         self.player.setPosition(target_ms)
 
     def _on_error_occurred(self, error: QMediaPlayer.Error, message: str = "") -> None:
@@ -311,6 +321,7 @@ class NativeVideoBackground(QObject):
             return
 
         self._reverse_timer.stop()
+        self._last_reverse_target_ms = None
         self.player.setPlaybackRate(self._playback_rate)
 
 
