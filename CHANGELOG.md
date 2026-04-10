@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.3.1 (2026-04-10)
+
+### Bug Fixes
+
+- **ui**: Trigger release for settings dialog responsiveness and theme polish
+  ([`95b2cd2`](https://github.com/AloisTh1/Anki-animated-background/commit/95b2cd2264a424bb9b5009d1ad9fc13c273652b7))
+
+
 ## v1.3.0 (2026-04-05)
 
 ### Features
