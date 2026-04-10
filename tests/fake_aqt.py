@@ -28,6 +28,7 @@ from PyQt6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QSlider,
     QStackedWidget,
@@ -74,6 +75,7 @@ def install_fake_aqt() -> None:
     qt_module.QPointF = QPointF
     qt_module.QPixmap = QPixmap
     qt_module.QPushButton = QPushButton
+    qt_module.QScrollArea = QScrollArea
     qt_module.QRect = QRect
     qt_module.QSize = QSize
     qt_module.QSizeF = QSizeF

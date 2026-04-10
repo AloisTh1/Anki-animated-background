@@ -13,6 +13,8 @@ install_fake_aqt()
 
 aqt_qt = importlib.import_module("aqt.qt")
 QApplication = aqt_qt.QApplication
+QRect = aqt_qt.QRect
+QScrollArea = aqt_qt.QScrollArea
 
 config_manager_module = importlib.import_module("src.config.config_manager")
 ConfigManager = config_manager_module.ConfigManager
@@ -247,6 +249,45 @@ class SettingsDialogTests(unittest.TestCase):
             self.config.data["media"]["source_folder"], str(Path("user_files") / "media" / "Wallpapers_anki")
         )
         self.assertEqual(self.config.data["media"]["selected_file"], "")
+
+    def test_dialog_wraps_main_content_in_scroll_area(self) -> None:
+        dialog = SettingsDialog(self.config)
+        self.addCleanup(dialog.close)
+
+        scroll_area = dialog.findChild(QScrollArea, "settingsScrollArea")
+
+        self.assertIsNotNone(scroll_area)
+        self.assertTrue(scroll_area.widgetResizable())
+
+    def test_dialog_initial_size_respects_available_screen_geometry(self) -> None:
+        with mock.patch.object(
+            SettingsDialog,
+            "_available_screen_geometry",
+            return_value=QRect(0, 0, 900, 640),
+        ):
+            dialog = SettingsDialog(self.config)
+        self.addCleanup(dialog.close)
+
+        self.assertLessEqual(dialog.width(), 828)
+        self.assertLessEqual(dialog.height(), 568)
+
+    def test_dialog_relaxes_large_widget_minimums_for_smaller_screens(self) -> None:
+        dialog = SettingsDialog(self.config)
+        self.addCleanup(dialog.close)
+
+        self.assertLessEqual(dialog.header_logo.minimumWidth(), 260)
+        self.assertLessEqual(dialog.header_logo.minimumHeight(), 108)
+        self.assertLessEqual(dialog.preview_view.minimumWidth(), 280)
+        self.assertLessEqual(dialog.preview_status_label.minimumWidth(), 220)
+
+    def test_preview_maintains_practical_minimum_height_after_shrink(self) -> None:
+        dialog = SettingsDialog(self.config)
+        self.addCleanup(dialog.close)
+
+        dialog.resize(760, 520)
+        self.app.processEvents()
+
+        self.assertGreaterEqual(dialog.preview_view.minimumHeight(), 158)
 
 
 if __name__ == "__main__":

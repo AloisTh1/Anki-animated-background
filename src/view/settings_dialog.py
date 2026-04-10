@@ -8,6 +8,7 @@ from pathlib import Path
 from aqt import qconnect
 from aqt.qt import (
     QAction,
+    QApplication,
     QCheckBox,
     QComboBox,
     QDesktopServices,
@@ -29,6 +30,7 @@ from aqt.qt import (
     QPointF,
     QPixmap,
     QPushButton,
+    QScrollArea,
     QSizeF,
     QSizePolicy,
     QSlider,
@@ -51,6 +53,14 @@ LARGE_VIDEO_WARNING_BYTES = 50 * 1024 * 1024
 LARGE_GIF_WARNING_BYTES = 20 * 1024 * 1024
 PREVIEW_MAX_WIDTH = 480
 PREVIEW_MAX_HEIGHT = 270
+PREVIEW_MIN_WIDTH = 280
+PREVIEW_MIN_HEIGHT = 158
+HEADER_LOGO_MIN_WIDTH = 260
+HEADER_LOGO_MIN_HEIGHT = 108
+PREVIEW_STATUS_MIN_WIDTH = 220
+DEFAULT_DIALOG_WIDTH = 1120
+DEFAULT_DIALOG_HEIGHT = 860
+SCREEN_MARGIN = 72
 TRIM_SLIDER_SCALE = 100
 PALETTE_TEXT = "#f7f9fb"
 PALETTE_CYAN = "#11d7d6"
@@ -69,18 +79,27 @@ SUPPORT_LINKS = [
 ]
 
 DARK_THEME = {
-    "ink": "#111923",
-    "panel": "#182430",
-    "panel_alt": "#213142",
-    "border": "#335166",
-    "text": "#f7f9fb",
-    "muted": "#c1ccd5",
-    "input_bg": "rgba(14, 23, 31, 0.94)",
-    "button_hover": "rgba(119, 84, 255, 0.20)",
-    "button_pressed": "rgba(119, 84, 255, 0.32)",
-    "button_fill": "rgba(119, 84, 255, 0.18)",
-    "selection": "rgba(45, 156, 255, 0.38)",
-    "slider_groove": "rgba(193, 204, 213, 0.34)",
+    "ink": "#101923",
+    "panel": "#18232f",
+    "panel_alt": "#223242",
+    "border": "#314a5e",
+    "text": "#edf3f8",
+    "muted": "#9cb2c3",
+    "input_bg": "#121b24",
+    "button_fill": "#223242",
+    "button_hover": "#294257",
+    "button_pressed": "#1a2b3a",
+    "button_border": "#46657c",
+    "accent": "#4cc9c2",
+    "accent_hover": "#63d8d1",
+    "accent_pressed": "#31aea7",
+    "accent_text": "#081317",
+    "title": "#7fdad4",
+    "selection": "rgba(76, 201, 194, 0.28)",
+    "slider_groove": "#395062",
+    "scroll_track": "#13202a",
+    "scroll_handle": "#3e5d74",
+    "preview_bg": "rgba(9, 15, 21, 0.82)",
 }
 
 LIGHT_THEME = {
@@ -94,8 +113,17 @@ LIGHT_THEME = {
     "button_hover": "rgba(119, 84, 255, 0.10)",
     "button_pressed": "rgba(119, 84, 255, 0.18)",
     "button_fill": "rgba(119, 84, 255, 0.10)",
+    "button_border": "#9d86ff",
+    "accent": "#2d9cff",
+    "accent_hover": "#57b0ff",
+    "accent_pressed": "#2286e6",
+    "accent_text": "#ffffff",
+    "title": "#7754ff",
     "selection": "rgba(45, 156, 255, 0.20)",
     "slider_groove": "rgba(81, 97, 115, 0.22)",
+    "scroll_track": "#dfe6ef",
+    "scroll_handle": "#b4c2d2",
+    "preview_bg": "rgba(26, 34, 48, 0.08)",
 }
 
 
@@ -132,13 +160,25 @@ class SettingsDialog(QDialog):
         self._cached_folder_files: list[str] = []
 
         self.setWindowTitle("Animated Background Settings")
-        self.resize(1120, 860)
         self.setObjectName("animatedBackgroundDialog")
         self.setWindowIcon(create_brand_icon(self._theme_mode))
 
         root_layout = QVBoxLayout(self)
         root_layout.setSpacing(18)
-        root_layout.addWidget(self._build_header_row())
+
+        scroll_area = QScrollArea(self)
+        scroll_area.setObjectName("settingsScrollArea")
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+
+        scroll_content = QWidget(scroll_area)
+        scroll_content.setObjectName("settingsScrollContent")
+        scroll_layout = QVBoxLayout(scroll_content)
+        scroll_layout.setContentsMargins(0, 0, 0, 0)
+        scroll_layout.setSpacing(18)
+        scroll_layout.addWidget(self._build_header_row())
 
         content = QWidget(self)
         content_layout = QHBoxLayout(content)
@@ -160,7 +200,11 @@ class SettingsDialog(QDialog):
 
         content_layout.addWidget(controls_column, 3)
         content_layout.addWidget(preview_column, 2)
-        root_layout.addWidget(content)
+        scroll_layout.addWidget(content)
+        scroll_layout.addStretch(1)
+        scroll_area.setWidget(scroll_content)
+        self.content_scroll_area = scroll_area
+        root_layout.addWidget(scroll_area, 1)
 
         actions_row = QWidget(self)
         actions_layout = QHBoxLayout(actions_row)
@@ -182,6 +226,7 @@ class SettingsDialog(QDialog):
         self._connect_live_update_signals()
         self._apply_tooltips()
         self._apply_site_palette()
+        self._apply_initial_window_size()
         self._refresh_preview_with_guard(allow_prompt=False)
 
     def closeEvent(self, event) -> None:
@@ -226,8 +271,9 @@ class SettingsDialog(QDialog):
 
         self.header_logo = QLabel(header)
         self.header_logo.setObjectName("dialogLogo")
-        self.header_logo.setMinimumSize(420, 150)
-        self.header_logo.setPixmap(create_brand_pixmap(size=360, theme_mode=self._theme_mode))
+        self.header_logo.setMinimumSize(HEADER_LOGO_MIN_WIDTH, HEADER_LOGO_MIN_HEIGHT)
+        self.header_logo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.MinimumExpanding)
+        self.header_logo.setPixmap(create_brand_pixmap(size=240, theme_mode=self._theme_mode))
         self.header_logo.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
         controls_column = QWidget(header)
@@ -448,11 +494,11 @@ class SettingsDialog(QDialog):
         self.preview_view.setFrameShape(QFrame.Shape.NoFrame)
         self.preview_view.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.preview_view.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.preview_view.setMinimumWidth(PREVIEW_MAX_WIDTH)
-        self.preview_view.setMinimumHeight(PREVIEW_MAX_HEIGHT)
+        self.preview_view.setMinimumWidth(PREVIEW_MIN_WIDTH)
+        self.preview_view.setMinimumHeight(PREVIEW_MIN_HEIGHT)
+        self.preview_view.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.preview_view.setInteractive(False)
         self.preview_view.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.preview_view.setStyleSheet("background: rgba(0, 0, 0, 0.18); border: 0;")
         self.preview_scene = QGraphicsScene(self.preview_view)
         self.preview_view.setScene(self.preview_scene)
         self.preview_video_item = QGraphicsVideoItem()
@@ -471,7 +517,8 @@ class SettingsDialog(QDialog):
         self.preview_status_label = QLabel("Select media to preview", controls)
         self.preview_status_label.setObjectName("previewStatusLabel")
         self.preview_status_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        self.preview_status_label.setMinimumWidth(340)
+        self.preview_status_label.setMinimumWidth(PREVIEW_STATUS_MIN_WIDTH)
+        self.preview_status_label.setWordWrap(True)
         self.preview_status_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
         controls_layout.addWidget(self.preview_play_button)
@@ -1084,7 +1131,24 @@ class SettingsDialog(QDialog):
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
+        self._sync_preview_view_aspect()
         self._layout_preview_media_item()
+
+    def _available_screen_geometry(self):
+        screen = self.screen() or QApplication.primaryScreen()
+        if screen is not None:
+            return screen.availableGeometry()
+        return None
+
+    def _apply_initial_window_size(self) -> None:
+        geometry = self._available_screen_geometry()
+        max_width = DEFAULT_DIALOG_WIDTH
+        max_height = DEFAULT_DIALOG_HEIGHT
+        if geometry is not None:
+            max_width = max(PREVIEW_MIN_WIDTH * 2, geometry.width() - SCREEN_MARGIN)
+            max_height = max(480, geometry.height() - SCREEN_MARGIN)
+        self.resize(min(DEFAULT_DIALOG_WIDTH, max_width), min(DEFAULT_DIALOG_HEIGHT, max_height))
+        self._sync_preview_view_aspect()
 
     def _confirm_current_media_selection_or_revert(self) -> bool:
         media_path = self._current_media_preview_path()
@@ -1290,8 +1354,8 @@ QMessageBox QPushButton:pressed {{
     def _sync_preview_view_aspect(self) -> None:
         if not hasattr(self, "preview_view"):
             return
-        width = max(320, self.preview_view.viewport().width() or PREVIEW_MAX_WIDTH)
-        height = max(180, round(width * 9 / 16))
+        width = max(PREVIEW_MIN_WIDTH, self.preview_view.viewport().width() or PREVIEW_MAX_WIDTH)
+        height = max(PREVIEW_MIN_HEIGHT, round(width * 9 / 16))
         self.preview_view.setMinimumHeight(height)
 
     def _apply_preview_direction(self) -> None:
@@ -1307,19 +1371,30 @@ QDialog#animatedBackgroundDialog {{
     color: {theme["text"]};
 }}
 
+QDialog#animatedBackgroundDialog QScrollArea#settingsScrollArea,
+QDialog#animatedBackgroundDialog QScrollArea#settingsScrollArea > QWidget > QWidget {{
+    background: {theme["ink"]};
+    border: 0;
+}}
+
+QDialog#animatedBackgroundDialog QWidget#settingsScrollContent {{
+    background: {theme["ink"]};
+}}
+
 QDialog#animatedBackgroundDialog QWidget {{
     color: {theme["text"]};
     font-size: 13px;
     font-family: "Segoe UI", Arial, sans-serif;
 }}
 
-QDialog#animatedBackgroundDialog QFrame#topHeader {{
-    background: transparent;
-    border: 0;
+QDialog#animatedBackgroundDialog QWidget#topHeader {{
+    background: {theme["panel"]};
+    border: 1px solid {theme["border"]};
+    padding: 18px 20px;
 }}
 
 QDialog#animatedBackgroundDialog QLabel#dialogLogo {{
-    min-height: 150px;
+    min-height: {HEADER_LOGO_MIN_HEIGHT}px;
     padding: 0;
 }}
 
@@ -1344,10 +1419,9 @@ QDialog#animatedBackgroundDialog QGroupBox::title {{
     subcontrol-origin: margin;
     left: 14px;
     padding: 0 8px;
-    color: {PALETTE_PURPLE_SOFT};
-    font-family: Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif;
-    font-size: 18px;
-    letter-spacing: 0.03em;
+    color: {theme["title"]};
+    font-family: "Segoe UI Semibold", "Segoe UI", Arial, sans-serif;
+    font-size: 16px;
 }}
 
 QDialog#animatedBackgroundDialog QFrame#brandHeader {{
@@ -1422,7 +1496,7 @@ QDialog#animatedBackgroundDialog QComboBox QAbstractItemView {{
 QDialog#animatedBackgroundDialog QPushButton {{
     background: {theme["button_fill"]};
     color: {theme["text"]};
-    border: 1px solid {PALETTE_PURPLE_SOFT};
+    border: 1px solid {theme["button_border"]};
     border-radius: 0px;
     padding: 8px 14px;
     font-weight: 600;
@@ -1430,10 +1504,27 @@ QDialog#animatedBackgroundDialog QPushButton {{
 
 QDialog#animatedBackgroundDialog QPushButton:hover {{
     background: {theme["button_hover"]};
+    border: 1px solid {theme["accent"]};
 }}
 
 QDialog#animatedBackgroundDialog QPushButton:pressed {{
     background: {theme["button_pressed"]};
+}}
+
+QDialog#animatedBackgroundDialog QPushButton#primaryActionButton {{
+    background: {theme["accent"]};
+    color: {theme["accent_text"]};
+    border: 1px solid {theme["accent"]};
+}}
+
+QDialog#animatedBackgroundDialog QPushButton#primaryActionButton:hover {{
+    background: {theme["accent_hover"]};
+    border: 1px solid {theme["accent_hover"]};
+}}
+
+QDialog#animatedBackgroundDialog QPushButton#primaryActionButton:pressed {{
+    background: {theme["accent_pressed"]};
+    border: 1px solid {theme["accent_pressed"]};
 }}
 
 QDialog#animatedBackgroundDialog QPushButton#smallResetButton {{
@@ -1447,6 +1538,14 @@ QDialog#animatedBackgroundDialog QPushButton#supportButton {{
     min-width: 154px;
     padding: 11px 18px;
     font-size: 15px;
+    background: transparent;
+    color: {theme["muted"]};
+    border: 1px solid {theme["border"]};
+}}
+
+QDialog#animatedBackgroundDialog QPushButton#supportButton:hover {{
+    color: {theme["text"]};
+    background: {theme["button_fill"]};
 }}
 
 QDialog#animatedBackgroundDialog QMenu {{
@@ -1485,8 +1584,8 @@ QDialog#animatedBackgroundDialog QCheckBox#enabledSwitch::indicator:checked {{
 }}
 
 QDialog#animatedBackgroundDialog QPushButton#smallResetButton:hover {{
-    border: 1px solid {PALETTE_PURPLE_SOFT};
-    color: {PALETTE_TEXT};
+    border: 1px solid {theme["accent"]};
+    color: {theme["text"]};
 }}
 
 QDialog#animatedBackgroundDialog QDialogButtonBox QPushButton {{
@@ -1508,16 +1607,41 @@ QDialog#animatedBackgroundDialog QSlider::handle:horizontal {{
     width: 16px;
     margin: -6px 0;
     border-radius: 0px;
-    background: {PALETTE_PURPLE_SOFT};
+    background: {theme["accent"]};
     border: 1px solid {theme["ink"]};
 }}
 
 QDialog#animatedBackgroundDialog QSlider#trimStartSlider::handle:horizontal {{
-    background: {PALETTE_PURPLE};
+    background: {theme["accent_hover"]};
 }}
 
 QDialog#animatedBackgroundDialog QSlider#trimEndSlider::handle:horizontal {{
-    background: {PALETTE_PURPLE_DEEP};
+    background: {theme["accent_pressed"]};
+}}
+
+QDialog#animatedBackgroundDialog QGraphicsView#previewMediaView {{
+    background: {theme["preview_bg"]};
+    border: 1px solid {theme["border"]};
+}}
+
+QDialog#animatedBackgroundDialog QScrollBar:vertical {{
+    width: 12px;
+    background: {theme["scroll_track"]};
+    margin: 0;
+}}
+
+QDialog#animatedBackgroundDialog QScrollBar::handle:vertical {{
+    min-height: 32px;
+    background: {theme["scroll_handle"]};
+    border: 0;
+}}
+
+QDialog#animatedBackgroundDialog QScrollBar::add-line:vertical,
+QDialog#animatedBackgroundDialog QScrollBar::sub-line:vertical,
+QDialog#animatedBackgroundDialog QScrollBar::add-page:vertical,
+QDialog#animatedBackgroundDialog QScrollBar::sub-page:vertical {{
+    background: transparent;
+    border: 0;
 }}
 """
         )
