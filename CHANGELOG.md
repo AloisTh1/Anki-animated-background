@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.3.2 (2026-04-13)
+
+### Bug Fixes
+
+- Move addon data out of user_files
+  ([`5a74fd9`](https://github.com/AloisTh1/Anki-animated-background/commit/5a74fd9b20dc3c88c7e3312dab342c1a4dc6c505))
+
+
 ## Unreleased
 
 ### Bug Fixes
