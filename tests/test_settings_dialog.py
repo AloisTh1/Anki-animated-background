@@ -161,11 +161,11 @@ class SettingsDialogTests(unittest.TestCase):
         self.assertEqual(self.config.list_media_files(), [])
 
     def test_choose_folder_opens_resolved_current_folder_when_available(self) -> None:
-        source_dir = self.root / "user_files" / "media" / "Wallpapers_anki"
+        source_dir = self.root / "assets" / "default_media" / "Wallpapers_anki"
         self._write_media(source_dir / "sample.gif")
         dialog = SettingsDialog(self.config)
         self.addCleanup(dialog.close)
-        dialog.folder_input.setText(str(Path("user_files") / "media" / "Wallpapers_anki"))
+        dialog.folder_input.setText(str(Path("assets") / "default_media" / "Wallpapers_anki"))
 
         with mock.patch.object(
             settings_dialog_module.QFileDialog,
@@ -208,7 +208,7 @@ class SettingsDialogTests(unittest.TestCase):
         self.assertIn("Preview paused", dialog.preview_status_label.text())
 
     def test_reset_addon_is_staged_until_save_and_cancel_restores_original_data(self) -> None:
-        packaged_source = self.root / "user_files" / "media" / "Wallpapers_anki" / "Smoke"
+        packaged_source = self.root / "assets" / "default_media" / "Wallpapers_anki" / "Smoke"
         self._write_media(packaged_source / "default.gif")
         managed_name = self._stage_managed_media("custom.gif")
         self.config.data["media"]["source_folder"] = ""
@@ -223,7 +223,9 @@ class SettingsDialogTests(unittest.TestCase):
             dialog._reset_addon()
 
         self.assertTrue(dialog._reset_staged)
-        self.assertEqual(dialog.folder_input.text(), str(Path("user_files") / "media" / "Wallpapers_anki"))
+        self.assertEqual(
+            dialog.folder_input.text(), str(Path("assets") / "default_media" / "Wallpapers_anki")
+        )
         self.assertEqual(dialog.media_selector.currentData(), "")
 
         dialog.reject()
@@ -232,7 +234,7 @@ class SettingsDialogTests(unittest.TestCase):
         self.assertIsNone(self.config.runtime_media_override())
 
     def test_reset_addon_removes_managed_media_on_save(self) -> None:
-        packaged_source = self.root / "user_files" / "media" / "Wallpapers_anki" / "Smoke"
+        packaged_source = self.root / "assets" / "default_media" / "Wallpapers_anki" / "Smoke"
         self._write_media(packaged_source / "default.gif")
         managed_name = self._stage_managed_media("custom.gif")
         self.config.save()
@@ -246,7 +248,8 @@ class SettingsDialogTests(unittest.TestCase):
 
         self.assertFalse(self.config.media_path(managed_name).exists())
         self.assertEqual(
-            self.config.data["media"]["source_folder"], str(Path("user_files") / "media" / "Wallpapers_anki")
+            self.config.data["media"]["source_folder"],
+            str(Path("assets") / "default_media" / "Wallpapers_anki"),
         )
         self.assertEqual(self.config.data["media"]["selected_file"], "")
 

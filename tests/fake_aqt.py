@@ -44,6 +44,11 @@ def install_fake_aqt() -> None:
     aqt_module = types.ModuleType("aqt")
     aqt_module._is_fake_aqt = True
     aqt_module.qconnect = lambda signal, slot: signal.connect(slot)
+    aqt_module.gui_hooks = types.SimpleNamespace(addon_manager_will_install_addon=[])
+    aqt_module.mw = types.SimpleNamespace(
+        pm=types.SimpleNamespace(profileFolder=lambda: ""),
+        addonManager=types.SimpleNamespace(addonFromModule=lambda _module: "AnkiAnimatedBackground"),
+    )
 
     qt_module = types.ModuleType("aqt.qt")
     qt_module.QApplication = QApplication

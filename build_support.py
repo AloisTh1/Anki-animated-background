@@ -10,12 +10,12 @@ import python_minifier
 SRC_DIR = "src"
 ROOT_INIT = "__init__.py"
 ASSETS_PACKAGING_DIR = os.path.join("assets", "packaging")
+ASSETS_DEFAULT_MEDIA_DIR = os.path.join("assets", "default_media")
 DEFAULT_LOGO_FILENAME = "logo_normal.png"
 TARGET_LOGO_PATH_IN_SRC = os.path.join(SRC_DIR, "view", "assets", "logo.png")
 PYPROJECT_FILENAME = "pyproject.toml"
 UTILS_FILE_PATH_IN_SRC = os.path.join(SRC_DIR, "common", "utils.py")
 FILES_TO_INCLUDE_IN_ROOT = ["LICENSE", "README.md"]
-USER_FILES_DIR = "user_files"
 MANIFEST = {
     "name": "AnkiAnimatedBackground",
     "author": "Alois Thibert",
@@ -91,11 +91,11 @@ def materialize_release_tree(target_dir: str, *, version: str, minify: bool) -> 
     )
     shutil.copy(ROOT_INIT, target_dir)
 
-    if os.path.isdir(USER_FILES_DIR):
-        print("Including packaged user files...")
+    if os.path.isdir(ASSETS_DEFAULT_MEDIA_DIR):
+        print("Including packaged default media...")
         shutil.copytree(
-            USER_FILES_DIR,
-            os.path.join(target_dir, USER_FILES_DIR),
+            ASSETS_DEFAULT_MEDIA_DIR,
+            os.path.join(target_dir, ASSETS_DEFAULT_MEDIA_DIR),
             ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"),
         )
 

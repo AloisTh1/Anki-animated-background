@@ -103,6 +103,7 @@ class NativeVideoBackground(QObject):
         resolved = media_path.resolve()
         previous_trim_start = self._trim_start
         previous_trim_end = self._trim_end
+        self.player.setVideoOutput(self.video_item)
         if self._source != resolved:
             self._has_error = False
             self._source = resolved
@@ -133,6 +134,12 @@ class NativeVideoBackground(QObject):
     def hide(self) -> None:
         self.player.stop()
         self.view.hide()
+
+    def release_media(self) -> None:
+        self.hide()
+        self.player.setVideoOutput(None)
+        self.player.setSource(QUrl())
+        self._source = None
 
     def _set_blur(self, blur: int) -> None:
         if blur <= 0:
@@ -376,6 +383,12 @@ class BackgroundController:
     def _hide_native_video(self) -> None:
         if self.native_video:
             self.native_video.hide()
+
+    def release_media_handles(self) -> None:
+        self._clear_current_page()
+        if self.native_video:
+            self.native_video.release_media()
+        self._set_webview_transparency(False)
 
     def _set_webview_transparency(self, transparent: bool) -> None:
         if not self.main_webview:

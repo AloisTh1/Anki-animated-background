@@ -33,6 +33,8 @@ class AnimatedBackgroundAddon:
         gui_hooks.deck_browser_did_render.append(self._on_screen_did_render)
         gui_hooks.overview_did_refresh.append(self._on_screen_did_render)
         gui_hooks.reviewer_did_show_question.append(self._on_reviewer_did_show_question)
+        if hasattr(gui_hooks, "addon_manager_will_install_addon"):
+            gui_hooks.addon_manager_will_install_addon.append(self._on_addon_will_install)
 
         main_window = ensure_main_window()
         self.action = QAction(ADDON_CONSTANTS.MENU_LABEL.value, main_window)
@@ -85,6 +87,20 @@ class AnimatedBackgroundAddon:
         if self._settings_dialog is None:
             return
         self._settings_dialog.close()
+
+    def _on_addon_will_install(self, addon_manager, package: str) -> None:
+        package_names = {ADDON_CONSTANTS.ADDON_NAME.value}
+        try:
+            if mw:
+                package_names.add(mw.addonManager.addonFromModule(__name__))
+        except Exception:
+            pass
+
+        if package not in package_names:
+            return
+
+        self._close_settings_dialog_for_shutdown()
+        self.background_controller.release_media_handles()
 
     def _on_screen_did_render(self, *_args) -> None:
         self.background_controller.refresh_current_view()

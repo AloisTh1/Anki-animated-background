@@ -2,13 +2,23 @@
 
 <!-- version list -->
 
+## Unreleased
+
+### Bug Fixes
+
+- Move runtime settings and imported media out of add-on `user_files` so future Anki updates do not depend on Anki's Windows-sensitive backup rename.
+- Package bundled wallpapers under `assets/default_media` and migrate old `user_files` data on startup.
+
+### Upgrade Notes
+
+- Users already stuck on the previous release may need one manual recovery before this fix can install: close Anki, delete or rename `addons21/files_backup` if it exists, make sure no background media file is open in another app, then retry the update or install the fixed `.ankiaddon`.
+
 ## v1.3.1 (2026-04-10)
 
 ### Bug Fixes
 
 - **ui**: Trigger release for settings dialog responsiveness and theme polish
   ([`95b2cd2`](https://github.com/AloisTh1/Anki-animated-background/commit/95b2cd2264a424bb9b5009d1ad9fc13c273652b7))
-
 
 ## v1.3.0 (2026-04-05)
 

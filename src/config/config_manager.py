@@ -12,6 +12,7 @@ from ..common.constants import ADDON_CONSTANTS
 
 SUPPORTED_MEDIA_EXTENSIONS = {".gif", ".webm", ".mp4"}
 PACKAGED_DEFAULT_SOURCE_FOLDER_NAME = "Wallpapers_anki"
+LEGACY_MIGRATED_DIRECTORY_NAME = "user_files_migrated"
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "enabled": True,
@@ -84,16 +85,139 @@ def _clamp_int(value: object, default: int, minimum: int, maximum: int) -> int:
 
 
 class ConfigManager:
-    def __init__(self, addon_root: str | Path | None = None) -> None:
+    def __init__(
+        self,
+        addon_root: str | Path | None = None,
+        profile_folder: str | Path | None = None,
+    ) -> None:
         self.addon_root = Path(addon_root).resolve() if addon_root else Path(__file__).resolve().parents[2]
-        self.user_files_dir = self.addon_root / ADDON_CONSTANTS.USER_FILES_DIRECTORY_NAME.value
+        self.legacy_user_files_dir = self.addon_root / ADDON_CONSTANTS.USER_FILES_DIRECTORY_NAME.value
+        self.packaged_media_dir = (
+            self.addon_root
+            / ADDON_CONSTANTS.ASSETS_DIRECTORY_NAME.value
+            / ADDON_CONSTANTS.DEFAULT_MEDIA_DIRECTORY_NAME.value
+        )
+        self.profile_folder = self._resolve_profile_folder(profile_folder)
+        self.user_files_dir = self._data_root()
         self.media_dir = self.user_files_dir / ADDON_CONSTANTS.MEDIA_DIRECTORY_NAME.value
         self.config_path = self.user_files_dir / ADDON_CONSTANTS.CONFIG_FILENAME.value
         self._runtime_media_override: Path | None = None
+        self.last_migration_error: str | None = None
         self.data: dict[str, Any] = deepcopy(DEFAULT_CONFIG)
+        self._migrate_legacy_user_files()
         self.reload()
 
+    def _activate_profile_data_root_if_available(self) -> None:
+        if self.profile_folder is not None:
+            return
+
+        profile_folder = self._resolve_profile_folder(None)
+        if profile_folder is None:
+            return
+
+        self.profile_folder = profile_folder
+        self.user_files_dir = self._data_root()
+        self.media_dir = self.user_files_dir / ADDON_CONSTANTS.MEDIA_DIRECTORY_NAME.value
+        self.config_path = self.user_files_dir / ADDON_CONSTANTS.CONFIG_FILENAME.value
+        self._migrate_legacy_user_files()
+
+    def _resolve_profile_folder(self, profile_folder: str | Path | None) -> Path | None:
+        if profile_folder is not None:
+            return Path(profile_folder).expanduser().resolve()
+
+        try:
+            from aqt import mw
+        except Exception:
+            return None
+
+        profile_manager = getattr(mw, "pm", None) if mw else None
+        profile_folder_getter = getattr(profile_manager, "profileFolder", None)
+        if not callable(profile_folder_getter):
+            return None
+
+        try:
+            resolved = profile_folder_getter()
+        except Exception:
+            return None
+        return Path(resolved).expanduser().resolve() if resolved else None
+
+    def _data_root(self) -> Path:
+        if self.profile_folder is None:
+            return self.legacy_user_files_dir
+        return (
+            self.profile_folder
+            / ADDON_CONSTANTS.PROFILE_DATA_PARENT_DIRECTORY_NAME.value
+            / ADDON_CONSTANTS.ADDON_NAME.value
+        )
+
+    def _migrate_legacy_user_files(self) -> None:
+        if self.profile_folder is None:
+            return
+        if not self.legacy_user_files_dir.exists():
+            return
+        if self.user_files_dir == self.legacy_user_files_dir:
+            return
+
+        try:
+            self.user_files_dir.mkdir(parents=True, exist_ok=True)
+            self._migrate_legacy_config()
+            self._migrate_legacy_media()
+            self._retire_legacy_user_files_dir()
+        except OSError as error:
+            self.last_migration_error = str(error)
+
+    def _migrate_legacy_config(self) -> None:
+        legacy_config_path = self.legacy_user_files_dir / ADDON_CONSTANTS.CONFIG_FILENAME.value
+        if not legacy_config_path.is_file() or self.config_path.exists():
+            return
+
+        try:
+            raw_data = json.loads(legacy_config_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            raw_data = {}
+        if not isinstance(raw_data, dict):
+            raw_data = {}
+
+        media = raw_data.get("media")
+        if isinstance(media, dict):
+            source_folder = media.get("source_folder", "")
+            if isinstance(source_folder, str):
+                media["source_folder"] = self._remap_legacy_source_folder_value(source_folder)
+
+        self.user_files_dir.mkdir(parents=True, exist_ok=True)
+        self.config_path.write_text(json.dumps(raw_data, indent=2) + "\n", encoding="utf-8")
+
+    def _migrate_legacy_media(self) -> None:
+        legacy_media_dir = self.legacy_user_files_dir / ADDON_CONSTANTS.MEDIA_DIRECTORY_NAME.value
+        if not legacy_media_dir.is_dir():
+            return
+
+        self.media_dir.mkdir(parents=True, exist_ok=True)
+        for source in legacy_media_dir.rglob("*"):
+            if not source.is_file():
+                continue
+            relative_path = source.relative_to(legacy_media_dir)
+            if relative_path.parts and relative_path.parts[0] == PACKAGED_DEFAULT_SOURCE_FOLDER_NAME:
+                continue
+            destination = self.media_dir / relative_path
+            if destination.exists():
+                continue
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, destination)
+
+    def _retire_legacy_user_files_dir(self) -> None:
+        if not self.legacy_user_files_dir.exists():
+            return
+
+        target = self.addon_root / LEGACY_MIGRATED_DIRECTORY_NAME
+        index = 1
+        while target.exists():
+            target = self.addon_root / f"{LEGACY_MIGRATED_DIRECTORY_NAME}_{index}"
+            index += 1
+        self.legacy_user_files_dir.rename(target)
+
     def reload(self) -> dict[str, Any]:
+        self._activate_profile_data_root_if_available()
         loaded: dict[str, Any] = {}
 
         if self.config_path.exists():
@@ -147,6 +271,7 @@ class ConfigManager:
         if not isinstance(source_folder, str):
             source_folder = ""
         elif source_folder:
+            source_folder = self._remap_legacy_source_folder_value(source_folder)
             resolved_source_folder = self.resolve_source_folder(source_folder)
             if resolved_source_folder is None:
                 source_folder = ""
@@ -173,6 +298,7 @@ class ConfigManager:
         }
 
     def save(self) -> None:
+        self._activate_profile_data_root_if_available()
         self.user_files_dir.mkdir(parents=True, exist_ok=True)
         self.media_dir.mkdir(parents=True, exist_ok=True)
         payload = self.normalize_data(self.data)
@@ -298,10 +424,39 @@ class ConfigManager:
             return str(resolved)
 
     def packaged_default_source_folder(self) -> Path | None:
-        candidate = self.media_dir / PACKAGED_DEFAULT_SOURCE_FOLDER_NAME
+        candidate = self.packaged_media_dir / PACKAGED_DEFAULT_SOURCE_FOLDER_NAME
         if not candidate.is_dir():
             return None
         return candidate.resolve() if self.list_source_folder_files(str(candidate)) else None
+
+    def _remap_legacy_source_folder_value(self, source_folder: str) -> str:
+        normalized = Path(source_folder)
+        legacy_packaged = Path(
+            ADDON_CONSTANTS.USER_FILES_DIRECTORY_NAME.value,
+            ADDON_CONSTANTS.MEDIA_DIRECTORY_NAME.value,
+            PACKAGED_DEFAULT_SOURCE_FOLDER_NAME,
+        )
+        new_packaged = Path(
+            ADDON_CONSTANTS.ASSETS_DIRECTORY_NAME.value,
+            ADDON_CONSTANTS.DEFAULT_MEDIA_DIRECTORY_NAME.value,
+            PACKAGED_DEFAULT_SOURCE_FOLDER_NAME,
+        )
+        if normalized == legacy_packaged:
+            return str(new_packaged)
+
+        try:
+            resolved = Path(source_folder).expanduser().resolve()
+        except OSError:
+            return source_folder
+
+        legacy_packaged_path = (
+            self.legacy_user_files_dir
+            / ADDON_CONSTANTS.MEDIA_DIRECTORY_NAME.value
+            / PACKAGED_DEFAULT_SOURCE_FOLDER_NAME
+        )
+        if resolved == legacy_packaged_path.resolve():
+            return str(new_packaged)
+        return source_folder
 
     def set_runtime_media_override(self, media_path: str | Path | None) -> None:
         if media_path is None:

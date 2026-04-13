@@ -99,7 +99,7 @@ The add-on is intentionally split into a few small modules with clear roles:
 - `__init__.py`
   Registers Anki hooks, creates shared services, and adds the Tools menu action.
 - `ConfigManager`
-  Reads and writes `user_files/config.json`, resolves selected media, and normalizes settings.
+  Reads and writes profile-scoped add-on data, resolves selected media, and normalizes settings.
 - `SettingsDialog`
   Lets the user preview media, tune options, and persist changes.
 - `WebviewInjector`
@@ -111,11 +111,11 @@ The add-on is intentionally split into a few small modules with clear roles:
 
 **Add-on data**
 
-- `user_files/config.json`
+- `profile/addon_data/AnkiAnimatedBackground/config.json`
   Persistent settings.
-- `user_files/media/`
+- `profile/addon_data/AnkiAnimatedBackground/media/`
   Managed imported media.
-- `Packaged sample media`
+- `assets/default_media/`
   Built-in sample backgrounds distributed with the add-on.
 
 **Startup and wiring**
@@ -147,9 +147,9 @@ The add-on is intentionally split into a few small modules with clear roles:
 
 **Data access**
 
-- `ConfigManager` reads and writes `user_files/config.json`.
-- `ConfigManager` resolves managed files from `user_files/media/`.
-- `ConfigManager` also resolves packaged default media when present.
+- `ConfigManager` reads and writes profile-scoped add-on data.
+- `ConfigManager` resolves managed files from the profile media directory.
+- `ConfigManager` resolves packaged defaults from `assets/default_media/`.
 
 **Screen refresh rules**
 
@@ -179,10 +179,8 @@ AnkiAnimatedBackground/
 |   |-- config/
 |   |-- injector/
 |   `-- view/
-|-- user_files/
-|   |-- config.json
-|   `-- media/
 |-- assets/
+|   |-- default_media/
 |   `-- packaging/
 |-- tests/
 `-- dist/
@@ -190,14 +188,16 @@ AnkiAnimatedBackground/
 
 ## Data Storage
 
-Runtime data is stored inside the add-on directory:
+Runtime data is stored in the active Anki profile:
 
-- `addons21/AnkiAnimatedBackground/user_files/config.json`
-- `addons21/AnkiAnimatedBackground/user_files/media/`
+- `<profile>/addon_data/AnkiAnimatedBackground/config.json`
+- `<profile>/addon_data/AnkiAnimatedBackground/media/`
 
-Packaged sample media can also live under:
+Packaged sample media lives inside the add-on package:
 
-- `addons21/AnkiAnimatedBackground/user_files/media/Wallpapers_anki/`
+- `addons21/<addon>/assets/default_media/Wallpapers_anki/`
+
+Older versions stored runtime files under `addons21/<addon>/user_files/`. On startup, the add-on migrates those files into the profile data directory and retires the legacy folder so future Anki updates do not need to rename it.
 
 ## Development
 

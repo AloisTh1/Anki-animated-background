@@ -104,6 +104,84 @@ class ConfigManagerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "gif, webm, mp4"):
             manager.commit_media_from_path(png_source)
 
+    def test_profile_folder_uses_profile_addon_data_directory(self) -> None:
+        profile_folder = self.root / "profile"
+
+        manager = ConfigManager(addon_root=self.root / "addon", profile_folder=profile_folder)
+
+        self.assertEqual(
+            manager.user_files_dir,
+            profile_folder / "addon_data" / "AnkiAnimatedBackground",
+        )
+        self.assertEqual(manager.config_path, manager.user_files_dir / "config.json")
+
+    def test_without_profile_folder_falls_back_to_addon_user_files(self) -> None:
+        addon_root = self.root / "addon"
+
+        manager = ConfigManager(addon_root=addon_root)
+
+        self.assertEqual(manager.user_files_dir, addon_root / "user_files")
+
+    def test_reload_switches_to_profile_data_when_profile_becomes_available(self) -> None:
+        addon_root = self.root / "addon"
+        profile_folder = self.root / "profile"
+        manager = ConfigManager(addon_root=addon_root)
+
+        with mock.patch.object(manager, "_resolve_profile_folder", return_value=profile_folder):
+            manager.reload()
+
+        self.assertEqual(
+            manager.user_files_dir,
+            profile_folder / "addon_data" / "AnkiAnimatedBackground",
+        )
+
+    def test_migrates_legacy_config_and_imported_media_to_profile_data(self) -> None:
+        addon_root = self.root / "addon"
+        profile_folder = self.root / "profile"
+        legacy_user_files = addon_root / "user_files"
+        legacy_media = legacy_user_files / "media"
+        packaged_default = addon_root / "assets" / "default_media" / "Wallpapers_anki" / "Smoke"
+        self._write_media(packaged_default / "default.gif")
+        self._write_media(legacy_media / "custom.gif")
+        self._write_media(legacy_media / "Wallpapers_anki" / "Smoke" / "legacy-default.gif")
+        legacy_user_files.mkdir(parents=True, exist_ok=True)
+        (legacy_user_files / "config.json").write_text(
+            json.dumps(
+                {
+                    "media": {
+                        "source_folder": str(Path("user_files") / "media" / "Wallpapers_anki"),
+                        "selected_file": "",
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        manager = ConfigManager(addon_root=addon_root, profile_folder=profile_folder)
+
+        self.assertEqual(
+            manager.data["media"]["source_folder"],
+            str(Path("assets") / "default_media" / "Wallpapers_anki"),
+        )
+        self.assertTrue((manager.media_dir / "custom.gif").is_file())
+        self.assertFalse((manager.media_dir / "Wallpapers_anki" / "Smoke" / "legacy-default.gif").exists())
+        self.assertFalse(legacy_user_files.exists())
+        self.assertTrue((addon_root / "user_files_migrated").exists())
+
+    def test_legacy_cleanup_failure_is_non_fatal_and_retried_later(self) -> None:
+        addon_root = self.root / "addon"
+        profile_folder = self.root / "profile"
+        legacy_user_files = addon_root / "user_files"
+        legacy_user_files.mkdir(parents=True, exist_ok=True)
+        (legacy_user_files / "config.json").write_text("{}", encoding="utf-8")
+
+        with mock.patch("pathlib.Path.rename", side_effect=PermissionError("locked")):
+            manager = ConfigManager(addon_root=addon_root, profile_folder=profile_folder)
+
+        self.assertIn("locked", manager.last_migration_error or "")
+        self.assertTrue(legacy_user_files.exists())
+        self.assertTrue(manager.config_path.is_file())
+
     def test_commit_media_prefers_link_then_copy_fallback(self) -> None:
         source = self.root / "source.gif"
         self._write_media(source)
@@ -170,18 +248,18 @@ class ConfigManagerTests(unittest.TestCase):
         )
 
     def test_first_reload_defaults_to_packaged_folder_with_none_selection(self) -> None:
-        default_source = self.root / "user_files" / "media" / "Wallpapers_anki" / "Smoke"
+        default_source = self.root / "assets" / "default_media" / "Wallpapers_anki" / "Smoke"
         self._write_media(default_source / "default.gif")
 
         manager = ConfigManager(addon_root=self.root)
 
         self.assertEqual(
-            manager.data["media"]["source_folder"], str(Path("user_files") / "media" / "Wallpapers_anki")
+            manager.data["media"]["source_folder"], str(Path("assets") / "default_media" / "Wallpapers_anki")
         )
         self.assertEqual(manager.data["media"]["selected_file"], "")
 
     def test_reset_to_defaults_restores_packaged_folder_and_clears_imported_media(self) -> None:
-        packaged_source = self.root / "user_files" / "media" / "Wallpapers_anki" / "Smoke"
+        packaged_source = self.root / "assets" / "default_media" / "Wallpapers_anki" / "Smoke"
         self._write_media(packaged_source / "default.gif")
         imported_source = self.root / "custom.gif"
         self._write_media(imported_source)
@@ -196,13 +274,13 @@ class ConfigManagerTests(unittest.TestCase):
 
         self.assertEqual(failed_removals, [])
         self.assertEqual(
-            manager.data["media"]["source_folder"], str(Path("user_files") / "media" / "Wallpapers_anki")
+            manager.data["media"]["source_folder"], str(Path("assets") / "default_media" / "Wallpapers_anki")
         )
         self.assertEqual(manager.data["media"]["selected_file"], "")
         self.assertFalse(manager.media_path(managed_name).exists())
 
     def test_reset_to_defaults_reports_locked_managed_files_without_crashing(self) -> None:
-        packaged_source = self.root / "user_files" / "media" / "Wallpapers_anki" / "Smoke"
+        packaged_source = self.root / "assets" / "default_media" / "Wallpapers_anki" / "Smoke"
         self._write_media(packaged_source / "default.gif")
         imported_source = self.root / "custom.gif"
         self._write_media(imported_source)
@@ -217,13 +295,13 @@ class ConfigManagerTests(unittest.TestCase):
         self.assertEqual(manager.data["media"]["selected_file"], "")
 
     def test_serialize_and_resolve_packaged_source_folder_as_addon_relative_path(self) -> None:
-        packaged_root = self.root / "user_files" / "media" / "Wallpapers_anki"
+        packaged_root = self.root / "assets" / "default_media" / "Wallpapers_anki"
         packaged_root.mkdir(parents=True, exist_ok=True)
         manager = ConfigManager(addon_root=self.root)
 
         serialized = manager.serialize_source_folder(packaged_root)
 
-        self.assertEqual(serialized, str(Path("user_files") / "media" / "Wallpapers_anki"))
+        self.assertEqual(serialized, str(Path("assets") / "default_media" / "Wallpapers_anki"))
         self.assertEqual(manager.resolve_source_folder(serialized), packaged_root.resolve())
 
     def test_normalize_media_selection_clears_invalid_folder_selection_instead_of_autopicking(self) -> None:
